@@ -11,32 +11,62 @@
 <body>
   <header class="top">
     <h1>Word Memo</h1>
-    <p class="sub">TXT import · Simple SRS · Offline</p>
+    <p class="sub">Default TXT · Simple SRS · Repeat · Unknown export</p>
   </header>
 
   <main class="wrap">
     <section class="card">
       <h2>Import words (.txt)</h2>
       <p class="hint">Format: <code>word[TAB]meaning</code> or <code>word - meaning</code></p>
-      <input id="file" type="file" accept=".txt,text/plain" />
-      <button id="btnImport" class="primary">Import</button>
-      <button id="btnClear" class="danger">Clear all</button>
-      <p id="stat">Cards: 0</p>
+
+      <div class="row">
+        <input id="file" type="file" accept=".txt,text/plain" />
+        <button id="btnImport" class="primary">Import</button>
+        <button id="btnClear" class="danger">Clear all</button>
+      </div>
+
+      <p id="stat" class="stat">Cards: 0</p>
+      <p class="hint small">Default loads: <code>word_3000.txt</code> (only when cards are empty)</p>
     </section>
 
     <section class="card">
-      <h2>Study</h2>
-      <p id="due">Due: 0</p>
+      <div class="row space">
+        <h2>Study</h2>
+        <span id="due" class="pill">Due: 0</span>
+      </div>
+
       <div id="prompt" class="prompt">Import a txt file to start.</div>
       <div id="answer" class="answer hidden"></div>
 
-      <button id="btnShow" class="primary">Show meaning</button>
+      <div class="controls">
+        <button id="btnShow" class="primary">Show meaning</button>
 
-      <div id="gradeRow" class="hidden">
-        <button id="btnForgot">I forgot</button>
-        <button id="btnKnew" class="primary">I knew</button>
+        <div id="gradeRow" class="row hidden">
+          <button id="btnForgot" class="ghost">I forgot</button>
+          <button id="btnKnew" class="primary">I knew</button>
+        </div>
+
+        <div class="repeatRow">
+          <button id="btnRepeatAll" class="ghost">Repeat from start (session)</button>
+          <button id="btnRepeatUnknown" class="ghost">Repeat unknown only (session)</button>
+        </div>
+
+        <div class="repeatRow">
+          <button id="btnExportUnknownSession" class="ghost">Download unknown (session) .txt</button>
+          <button id="btnExportUnknownAll" class="ghost">Download ALL unknown .txt</button>
+          <button id="btnShareUnknownAll" class="ghost">Share / Save ALL unknown</button>
+          <button id="btnClearUnknownAll" class="ghost">Clear unknown list</button>
+        </div>
       </div>
+
+      <p class="hint small">
+        SRS: forgot → level 0 (10 min) · knew → +1 (1d/3d/7d/14d/30d)
+      </p>
     </section>
+
+    <footer class="foot">
+      <p class="small muted">iPhone: Safari → Share → Add to Home Screen</p>
+    </footer>
   </main>
 
   <script src="app.js"></script>
