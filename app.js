@@ -2,28 +2,39 @@
 const DEFAULT_TXT = "word_3000.txt";
 
 // ===== Storage =====
-const LS = "wordmemo_cards";
-let cards = JSON.parse(localStorage.getItem(LS) || "[]");
+const LS_CARDS = "wordmemo_cards_v2";
+const LS_UNKNOWN = "wordmemo_unknown_ids_v2"; // 누적 unknown
+
+let cards = JSON.parse(localStorage.getItem(LS_CARDS) || "[]");
+let unknownIds = JSON.parse(localStorage.getItem(LS_UNKNOWN) || "[]");
+
 let showing = false;
+
+// ===== Session tracking (Repeat/Export for current session) =====
+let sessionAllIds = [];
+let sessionUnknownIds = [];
 
 const $ = (id) => document.getElementById(id);
 
-function save() {
-  localStorage.setItem(LS, JSON.stringify(cards));
+function saveCards() {
+  localStorage.setItem(LS_CARDS, JSON.stringify(cards));
+}
+function saveUnknown() {
+  localStorage.setItem(LS_UNKNOWN, JSON.stringify(unknownIds));
+}
+function pushUnique(arr, id) {
+  if (!arr.includes(id)) arr.push(id);
+}
+function resetSession() {
+  sessionAllIds = [];
+  sessionUnknownIds = [];
 }
 
 // ===== Robust UTF-8 decoding helpers =====
 async function responseToTextUTF8(res) {
-  // Force UTF-8 regardless of headers to avoid mojibake on some servers
   const buf = await res.arrayBuffer();
-  try {
-    return new TextDecoder("utf-8", { fatal: false }).decode(buf);
-  } catch {
-    // very old fallback
-    return new TextDecoder().decode(buf);
-  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
 }
-
 async function fileToTextUTF8(file) {
   const buf = await file.arrayBuffer();
   return new TextDecoder("utf-8", { fatal: false }).decode(buf);
@@ -41,7 +52,6 @@ function parseText(text) {
     .filter(Boolean);
 
   const out = [];
-
   for (const line of lines) {
     let term = "";
     let meaning = "";
@@ -69,10 +79,9 @@ function parseText(text) {
       term,
       meaning,
       level: 0,
-      due: Date.now()
+      due: Date.now() // immediately due
     });
   }
-
   return out;
 }
 
@@ -80,20 +89,149 @@ function parseText(text) {
 function dueCards() {
   return cards.filter((c) => (c.due || 0) <= Date.now());
 }
-
 function nextDue(level) {
   const days = [0, 1, 3, 7, 14, 30];
   const lvl = Math.max(0, Math.min(5, level));
-  if (lvl === 0) return Date.now() + 10 * 60 * 1000;
-  return Date.now() + days[lvl] * 86400000;
+  if (lvl === 0) return Date.now() + 10 * 60 * 1000; // +10 min
+  return Date.now() + days[lvl] * 86400000; // +days
+}
+
+// ===== Repeat helpers (session) =====
+function repeatAllSession() {
+  if (sessionAllIds.length === 0) return;
+
+  const now = Date.now();
+  for (const id of sessionAllIds) {
+    const idx = cards.findIndex((c) => c.id === id);
+    if (idx >= 0) cards[idx].due = now;
+  }
+  saveCards();
+  showing = false;
+  updateUI();
+}
+function repeatUnknownSession() {
+  if (sessionUnknownIds.length === 0) return;
+
+  const now = Date.now();
+  for (const id of sessionUnknownIds) {
+    const idx = cards.findIndex((c) => c.id === id);
+    if (idx >= 0) cards[idx].due = now;
+  }
+  saveCards();
+  showing = false;
+  updateUI();
+}
+
+// ===== Unknown export helpers =====
+function getCardsByIds(ids) {
+  return ids.map(id => cards.find(c => c.id === id)).filter(Boolean);
+}
+function buildTxt(cardsArr) {
+  // term<TAB>meaning
+  return cardsArr.map(c => `${c.term}\t${c.meaning}`).join("\n");
+}
+function downloadTextFile(filename, text) {
+  // UTF-8 with BOM (Windows Notepad friendly)
+  const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function dateStamp() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Export: session unknown
+function exportUnknownSessionTxt() {
+  if (sessionUnknownIds.length === 0) {
+    alert("No unknown words in this session yet.");
+    return;
+  }
+  const list = getCardsByIds(sessionUnknownIds);
+  if (!list.length) return alert("Unknown words not found (maybe cleared).");
+
+  downloadTextFile(`unknown_session_${dateStamp()}.txt`, buildTxt(list));
+}
+
+// Export: cumulative unknown
+function exportUnknownAllTxt() {
+  if (unknownIds.length === 0) {
+    alert("Unknown list is empty.");
+    return;
+  }
+  const list = getCardsByIds(unknownIds);
+  if (!list.length) return alert("Unknown words not found (maybe cleared).");
+
+  downloadTextFile(`unknown_ALL_${dateStamp()}.txt`, buildTxt(list));
+}
+
+// Share (iPhone Save to Files via share sheet when supported)
+async function shareUnknownAll() {
+  if (unknownIds.length === 0) {
+    alert("Unknown list is empty.");
+    return;
+  }
+  const list = getCardsByIds(unknownIds);
+  if (!list.length) return alert("Unknown words not found (maybe cleared).");
+
+  const filename = `unknown_ALL_${dateStamp()}.txt`;
+  const text = buildTxt(list);
+  const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
+
+  // If Web Share API with files is supported, show share sheet (includes "Save to Files" on iOS)
+  if (navigator.share && window.File) {
+    try {
+      const file = new File([blob], filename, { type: "text/plain" });
+      await navigator.share({ files: [file], title: filename, text: "Unknown words" });
+      return;
+    } catch (e) {
+      // user cancelled or not supported in this context; fall back
+    }
+  }
+
+  // Fallback: download
+  downloadTextFile(filename, text);
+}
+
+function clearUnknownAll() {
+  if (!confirm("Clear ALL unknown words list?")) return;
+  unknownIds = [];
+  saveUnknown();
+  updateUI();
+  alert("Unknown list cleared.");
 }
 
 // ===== UI =====
+function updateButtons() {
+  // Repeat buttons
+  if ($("btnRepeatAll")) $("btnRepeatAll").disabled = sessionAllIds.length === 0;
+  if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownIds.length === 0;
+
+  // Export buttons
+  if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownIds.length === 0;
+  if ($("btnExportUnknownAll")) $("btnExportUnknownAll").disabled = unknownIds.length === 0;
+  if ($("btnShareUnknownAll")) $("btnShareUnknownAll").disabled = unknownIds.length === 0;
+  if ($("btnClearUnknownAll")) $("btnClearUnknownAll").disabled = unknownIds.length === 0;
+}
+
 function updateUI() {
   $("stat").textContent = `Cards: ${cards.length}`;
 
   const due = dueCards();
   $("due").textContent = `Due: ${due.length}`;
+
+  updateButtons();
 
   if (!due.length) {
     $("prompt").textContent = cards.length ? "No cards due 🎉" : "Import a txt file to start.";
@@ -129,13 +267,14 @@ async function loadDefaultTxtIfEmpty() {
       return;
     }
 
-    const text = await responseToTextUTF8(res); // <-- force UTF-8
+    const text = await responseToTextUTF8(res); // force UTF-8
     const parsed = parseText(text);
 
     if (parsed.length > 0) {
       cards = parsed;
-      save();
+      saveCards();
       showing = false;
+      resetSession();
       updateUI();
       console.log("Loaded default:", DEFAULT_TXT, parsed.length);
     } else {
@@ -151,29 +290,33 @@ $("btnImport").onclick = async () => {
   const file = $("file").files[0];
   if (!file) return alert("Please choose a .txt file first.");
 
-  // Force UTF-8 for imported txt too
-  const text = await fileToTextUTF8(file);
+  const text = await fileToTextUTF8(file); // force UTF-8 for imports
   const parsed = parseText(text);
 
+  // de-dup by term (case-insensitive)
   const existing = new Set(cards.map((c) => c.term.toLowerCase()));
   const filtered = parsed.filter((c) => !existing.has(c.term.toLowerCase()));
 
   cards = cards.concat(filtered);
-  save();
+  saveCards();
 
   $("file").value = "";
   showing = false;
+  resetSession(); // new import = new session
   updateUI();
 };
 
 $("btnClear").onclick = () => {
-  if (!confirm("Clear all?")) return;
+  if (!confirm("Clear all cards?")) return;
+
   cards = [];
-  save();
+  saveCards();
+
   showing = false;
+  resetSession();
   updateUI();
 
-  // Optional: after clearing, re-load default automatically
+  // After clearing cards, reload default automatically
   loadDefaultTxtIfEmpty();
 };
 
@@ -182,29 +325,49 @@ $("btnShow").onclick = () => {
   updateUI();
 };
 
-$("btnKnew").onclick = () => {
-  const c = dueCards()[0];
+function gradeCurrent(knew) {
+  const due = dueCards();
+  const c = due[0];
   if (!c) return;
 
-  c.level = Math.min((c.level || 0) + 1, 5);
-  c.due = nextDue(c.level);
+  // Track session
+  pushUnique(sessionAllIds, c.id);
+
+  if (!knew) {
+    // Track session unknown
+    pushUnique(sessionUnknownIds, c.id);
+
+    // Track cumulative unknown
+    pushUnique(unknownIds, c.id);
+    saveUnknown();
+  }
+
+  // Apply SRS
+  if (knew) {
+    c.level = Math.min((c.level || 0) + 1, 5);
+    c.due = nextDue(c.level);
+  } else {
+    c.level = 0;
+    c.due = nextDue(0);
+  }
 
   showing = false;
-  save();
+  saveCards();
   updateUI();
-};
+}
 
-$("btnForgot").onclick = () => {
-  const c = dueCards()[0];
-  if (!c) return;
+$("btnKnew").onclick = () => gradeCurrent(true);
+$("btnForgot").onclick = () => gradeCurrent(false);
 
-  c.level = 0;
-  c.due = nextDue(0);
+// Repeat buttons
+if ($("btnRepeatAll")) $("btnRepeatAll").onclick = () => repeatAllSession();
+if ($("btnRepeatUnknown")) $("btnRepeatUnknown").onclick = () => repeatUnknownSession();
 
-  showing = false;
-  save();
-  updateUI();
-};
+// Export/Share buttons
+if ($("btnExportUnknownSession")) $("btnExportUnknownSession").onclick = () => exportUnknownSessionTxt();
+if ($("btnExportUnknownAll")) $("btnExportUnknownAll").onclick = () => exportUnknownAllTxt();
+if ($("btnShareUnknownAll")) $("btnShareUnknownAll").onclick = () => shareUnknownAll();
+if ($("btnClearUnknownAll")) $("btnClearUnknownAll").onclick = () => clearUnknownAll();
 
 // ===== Service Worker (offline cache) =====
 if ("serviceWorker" in navigator) {
