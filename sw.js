@@ -1,4 +1,4 @@
-const CACHE = "wordmemo-v2";
+const CACHE = "wordmemo-v3"; // ← 버전 올림 (중요)
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE).then((c) => c.addAll(ASSETS))
   );
@@ -20,10 +21,18 @@ self.addEventListener("activate", (e) => {
       Promise.all(keys.map(k => (k !== CACHE ? caches.delete(k) : null)))
     )
   );
+  self.clients.claim();
 });
 
 self.addEventListener("fetch", (e) => {
+  // Network first → cache fallback
   e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+    fetch(e.request)
+      .then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+        return res;
+      })
+      .catch(() => caches.match(e.request))
   );
 });
