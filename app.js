@@ -12,6 +12,23 @@ function save() {
   localStorage.setItem(LS, JSON.stringify(cards));
 }
 
+// ===== Robust UTF-8 decoding helpers =====
+async function responseToTextUTF8(res) {
+  // Force UTF-8 regardless of headers to avoid mojibake on some servers
+  const buf = await res.arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  } catch {
+    // very old fallback
+    return new TextDecoder().decode(buf);
+  }
+}
+
+async function fileToTextUTF8(file) {
+  const buf = await file.arrayBuffer();
+  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+}
+
 // ===== TXT Parsing =====
 // supported formats (one per line):
 // 1) word<TAB>meaning
@@ -38,7 +55,6 @@ function parseText(text) {
       term = (parts[0] || "").trim();
       meaning = (parts.slice(1).join(" - ") || "").trim();
     } else if (line.includes("-")) {
-      // split only once
       const idx = line.indexOf("-");
       term = line.slice(0, idx).trim();
       meaning = line.slice(idx + 1).trim();
@@ -53,7 +69,7 @@ function parseText(text) {
       term,
       meaning,
       level: 0,
-      due: Date.now() // immediately due
+      due: Date.now()
     });
   }
 
@@ -68,9 +84,8 @@ function dueCards() {
 function nextDue(level) {
   const days = [0, 1, 3, 7, 14, 30];
   const lvl = Math.max(0, Math.min(5, level));
-
-  if (lvl === 0) return Date.now() + 10 * 60 * 1000; // +10 min
-  return Date.now() + days[lvl] * 86400000; // +days
+  if (lvl === 0) return Date.now() + 10 * 60 * 1000;
+  return Date.now() + days[lvl] * 86400000;
 }
 
 // ===== UI =====
@@ -89,18 +104,15 @@ function updateUI() {
   }
 
   const card = due[0];
-
   $("prompt").textContent = card.term;
 
   if (showing) {
     $("answer").textContent = card.meaning;
     $("answer").classList.remove("hidden");
-
     $("gradeRow").classList.remove("hidden");
     $("btnShow").classList.add("hidden");
   } else {
     $("answer").classList.add("hidden");
-
     $("gradeRow").classList.add("hidden");
     $("btnShow").classList.remove("hidden");
   }
@@ -108,13 +120,16 @@ function updateUI() {
 
 // ===== Default auto-load (only if empty) =====
 async function loadDefaultTxtIfEmpty() {
-  if (cards.length > 0) return; // already have cards
+  if (cards.length > 0) return;
 
   try {
     const res = await fetch(DEFAULT_TXT, { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      console.warn("Default txt fetch failed:", res.status);
+      return;
+    }
 
-    const text = await res.text();
+    const text = await responseToTextUTF8(res); // <-- force UTF-8
     const parsed = parseText(text);
 
     if (parsed.length > 0) {
@@ -123,6 +138,8 @@ async function loadDefaultTxtIfEmpty() {
       showing = false;
       updateUI();
       console.log("Loaded default:", DEFAULT_TXT, parsed.length);
+    } else {
+      console.warn("Default txt parsed 0 lines. Check format.");
     }
   } catch (e) {
     console.warn("Default txt not loaded:", e);
@@ -134,10 +151,10 @@ $("btnImport").onclick = async () => {
   const file = $("file").files[0];
   if (!file) return alert("Please choose a .txt file first.");
 
-  const text = await file.text();
+  // Force UTF-8 for imported txt too
+  const text = await fileToTextUTF8(file);
   const parsed = parseText(text);
 
-  // optional: de-dup by term (case-insensitive)
   const existing = new Set(cards.map((c) => c.term.toLowerCase()));
   const filtered = parsed.filter((c) => !existing.has(c.term.toLowerCase()));
 
@@ -155,6 +172,9 @@ $("btnClear").onclick = () => {
   save();
   showing = false;
   updateUI();
+
+  // Optional: after clearing, re-load default automatically
+  loadDefaultTxtIfEmpty();
 };
 
 $("btnShow").onclick = () => {
