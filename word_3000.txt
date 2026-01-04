@@ -1,3 +1,101 @@
-apple	사과
-take off	벗다, 이륙하다
-weather - 날씨
+2900. abstract	추상적인
+2901. adjacent	인접한
+2902. advocate	옹호하다, 지지자
+2903. aggregate	총합의; 집합체
+2904. ambiguity	모호함
+2905. analogous	유사한
+2906. anomaly	이상 현상
+2907. anticipate	예상하다
+2908. apparatus	기구, 장치
+2909. arbitrary	임의의
+2910. assert	주장하다
+2911. assumption	가정
+2912. attribute	속성; ~의 결과로 보다
+2913. autonomous	자율적인
+2914. bias	편견
+2915. capacity	수용 능력
+2916. coherence	일관성
+2917. coincide	일치하다
+2918. commodity	상품
+2919. compatible	호환되는
+2920. compelling	설득력 있는
+2921. compensate	보상하다
+2922. component	구성 요소
+2923. compound	복합체
+2924. conceive	상상하다, 생각해내다
+2925. consensus	합의
+2926. constraint	제약
+2927. constitute	구성하다
+2928. controversy	논란
+2929. conventional	전통적인
+2930. correlate	상관관계가 있다
+2931. criteria	기준들
+2932. crucial	결정적인
+2933. cumulative	누적되는
+2934. deduce	추론하다
+2935. deficiency	결핍
+2936. deliberate	신중한; 숙고하다
+2937. demonstrate	입증하다
+2938. denote	의미하다
+2939. deviation	일탈
+2940. diminish	줄어들다
+2941. discrete	별개의
+2942. distort	왜곡하다
+2943. domain	영역
+2944. empirical	경험에 근거한
+2945. enable	가능하게 하다
+2946. enhance	향상시키다
+2947. entity	독립체
+2948. equivalent	동등한
+2949. eradicate	근절하다
+2950. ethical	윤리적인
+2951. evaluate	평가하다
+2952. evident	명백한
+2953. exacerbate	악화시키다
+2954. exclude	제외하다
+2955. explicit	명확한
+2956. facilitate	용이하게 하다
+2957. feasible	실현 가능한
+2958. finite	유한한
+2959. fluctuate	변동하다
+2960. framework	체계
+2961. fundamental	근본적인
+2962. hierarchy	계층 구조
+2963. hypothesis	가설
+2964. imply	암시하다
+2965. incentive	유인책
+2966. inevitable	피할 수 없는
+2967. infrastructure	기반 시설
+2968. inherent	고유한
+2969. inhibit	억제하다
+2970. integrate	통합하다
+2971. interpret	해석하다
+2972. intervene	개입하다
+2973. intrinsic	본질적인
+2974. justification	정당화
+2975. mitigate	완화하다
+2976. negligible	무시할 수 있는
+2977. nonetheless	그럼에도 불구하고
+2978. norm	규범
+2979. objective	객관적인; 목표
+2980. obscure	모호한
+2981. offset	상쇄하다
+2982. paradigm	전형, 패러다임
+2983. parameter	매개변수
+2984. persist	지속되다
+2985. phenomenon	현상
+2986. predominant	우세한
+2987. preliminary	예비의
+2988. prerequisite	필수 조건
+2989. profound	깊은
+2990. prohibit	금지하다
+2991. rationale	근거
+2992. reinforce	강화하다
+2993. reside	거주하다; 존재하다
+2994. resolve	해결하다
+2995. retain	유지하다
+2996. revenue	수익
+2997. stability	안정
+2998. substitute	대체하다
+2999. sustainable	지속 가능한
+3000. trigger	촉발하다
