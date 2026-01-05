@@ -36,11 +36,6 @@ function loadCurrentFileLabel() {
   if ($("currentFile")) $("currentFile").textContent = name || "–";
 }
 
-// ===== DONE popup =====
-function donePopup() {
-  alert("Done!");
-}
-
 // ===== Robust UTF-8 decoding =====
 async function responseToTextUTF8(res) {
   const buf = await res.arrayBuffer();
@@ -103,16 +98,16 @@ function parseText(text) {
 function nextDue(level) {
   const days = [0, 1, 3, 7, 14, 30];
   const lvl = Math.max(0, Math.min(5, level));
-  if (lvl === 0) return Date.now() + 10 * 60 * 1000;
+  if (lvl === 0) return Date.now() + 10 * 60 * 1000; // 10 min
   return Date.now() + days[lvl] * 86400000;
 }
 
 // =====================================================
-// ✅ Unknown-only 반복을 “모드 UI 없이” 구현: FILTER 방식
+// ✅ Unknown-only 반복을 "UI 그대로" 유지하며 FILTER 방식
 // =====================================================
 let unknownFilterOn = false;
-let unknownFilterSet = new Set();   // 남아있는 unknown(실시간 감소)
-let unknownFilterIds = [];          // 순서 유지용(필요시)
+let unknownFilterSet = new Set();   // "아직 모르는(남은) unknown 단어" (I knew로만 줄어듦)
+let unknownFilterIds = [];          // 시작 시 그룹(순서)
 
 function setStudyHintVisible(on) {
   const el = $("studyHint");
@@ -120,6 +115,7 @@ function setStudyHintVisible(on) {
   el.classList.toggle("hidden", !on);
 }
 
+// unknown-only 필터 해제
 function clearUnknownFilter(silent = false) {
   unknownFilterOn = false;
   unknownFilterSet = new Set();
@@ -128,14 +124,19 @@ function clearUnknownFilter(silent = false) {
   if (!silent) updateUI();
 }
 
+// ✅ 핵심: 누를 때마다 "현재 sessionUnknownIds"로 다시 시작(리셋)
 function startUnknownFilterFromSession() {
   if (sessionUnknownIds.length === 0) return;
 
   unknownFilterOn = true;
+
+  // "현재 세션에서 forgot 눌렀던 것" 기준으로 새 그룹 구성
   unknownFilterIds = [...sessionUnknownIds];
+
+  // "남은 unknown"은 처음엔 그룹 전체
   unknownFilterSet = new Set(unknownFilterIds);
 
-  // 이 unknown들만 바로 복습되도록 due를 당김
+  // 이 그룹을 지금 바로 돌릴 수 있게 due를 now로 당김
   const now = Date.now();
   for (const id of unknownFilterIds) {
     const idx = cards.findIndex(c => c.id === id);
@@ -148,27 +149,23 @@ function startUnknownFilterFromSession() {
   updateUI();
 }
 
-function getQueue() {
+// 현재 unknown-only에서 "지금 due(<=now)"인 카드들만 큐로
+function getUnknownQueue() {
   const now = Date.now();
+  return cards.filter(c => unknownFilterSet.has(c.id) && (c.due || 0) <= now);
+}
 
-  if (unknownFilterOn) {
-    // 남은 게 0이면 Done + 필터 자동 해제
-    if (unknownFilterSet.size === 0) {
-      donePopup();
-      clearUnknownFilter(true);
-      return [];
-    }
-    return cards.filter(c => unknownFilterSet.has(c.id) && (c.due || 0) <= now);
-  }
-
+function getQueue() {
+  if (unknownFilterOn) return getUnknownQueue();
+  const now = Date.now();
   return cards.filter(c => (c.due || 0) <= now);
 }
 
-// ===== Repeat helpers =====
+// ===== Repeat all (session) =====
 function repeatAllSession() {
   if (sessionAllIds.length === 0) return;
 
-  // repeat all 하면 전체로 돌아가기
+  // repeat all 하면 원래 UI/전체 큐로
   clearUnknownFilter(true);
 
   const now = Date.now();
@@ -253,7 +250,6 @@ async function shareUnknownAll() {
       return;
     } catch (e) {}
   }
-
   downloadTextFile(filename, text);
 }
 
@@ -287,9 +283,7 @@ function mergePreserveProgress(freshCards) {
   const merged = freshCards.map(nc => {
     const key = nc.term.toLowerCase();
     const old = oldMap.get(key);
-    if (old) {
-      return { ...old, num: nc.num ?? old.num ?? null, term: nc.term, meaning: nc.meaning };
-    }
+    if (old) return { ...old, num: nc.num ?? old.num ?? null, term: nc.term, meaning: nc.meaning };
     return nc;
   });
 
@@ -300,7 +294,7 @@ function mergePreserveProgress(freshCards) {
   unknownIds = unknownIds.filter(id => existingIds.has(id));
   saveUnknown();
 
-  // 필터 중이면, 사라진 id 제거
+  // unknown-only 중이면, 사라진 id 제거
   if (unknownFilterOn) {
     unknownFilterIds = unknownFilterIds.filter(id => existingIds.has(id));
     unknownFilterSet = new Set([...unknownFilterSet].filter(id => existingIds.has(id)));
@@ -331,7 +325,6 @@ async function checkWordsUpdateOnOpen() {
       localStorage.setItem(LS_WORDS_SIG, sig);
       mergePreserveProgress(fresh);
 
-      // currentFile 표시 잠깐 UPDATED
       const el = $("currentFile");
       if (el) {
         el.textContent = `${DEFAULT_TXT}  ✅ UPDATED`;
@@ -358,15 +351,18 @@ function updateUI() {
   $("stat").textContent = `Cards: ${cards.length}`;
 
   const queue = getQueue();
-  const dueShown = unknownFilterOn ? unknownFilterSet.size : cards.filter(c => (c.due || 0) <= Date.now()).length;
+
+  // ✅ 핵심: unknown-only일 때 Due는 "지금 due인 unknown 큐 길이"
+  const dueShown = unknownFilterOn
+    ? queue.length
+    : cards.filter(c => (c.due || 0) <= Date.now()).length;
+
   $("due").textContent = `Due: ${dueShown}`;
 
-  // ✅ Unknown 카운트도 “현재 공부 대상” 기준으로 실시간
-  if (unknownFilterOn) {
-    $("unknownCount").textContent = `Unknown: ${unknownFilterSet.size}`;
-  } else {
-    $("unknownCount").textContent = `Unknown: ${unknownIds.length}`;
-  }
+  // ✅ Unknown은 "남아있는 unknown 단어 수" (I knew로만 줄어듦)
+  $("unknownCount").textContent = unknownFilterOn
+    ? `Unknown: ${unknownFilterSet.size}`
+    : `Unknown: ${unknownIds.length}`;
 
   setStudyHintVisible(unknownFilterOn);
   updateButtons();
@@ -468,7 +464,7 @@ $("btnImport").onclick = async () => {
 
   setCurrentFile(file.name);
 
-  // import하면 unknown-only 필터 해제
+  // import하면 unknown-only 해제
   clearUnknownFilter(true);
 
   $("file").value = "";
@@ -514,27 +510,20 @@ function gradeCurrent(knew) {
     c.level = Math.min((c.level || 0) + 1, 5);
     c.due = nextDue(c.level);
 
-    // ✅ unknown-only 필터 중이면: I knew → 남은 목록에서 제거(실시간 감소)
+    // unknown-only이면: I knew → 남아있는 unknown에서 제거
     if (unknownFilterOn && unknownFilterSet.has(c.id)) {
       unknownFilterSet.delete(c.id);
       unknownFilterIds = unknownFilterIds.filter(id => id !== c.id);
-
-      if (unknownFilterSet.size === 0) {
-        saveCards();
-        showing = false;
-        donePopup();
-        clearUnknownFilter(true);
-        updateUI();
-        return;
-      }
     }
   } else {
     c.level = 0;
     c.due = nextDue(0);
+    // unknown-only에서는 I forgot이어도 unknown은 유지 (unknownFilterSet 유지)
+    // due는 미래로 가므로, "queue.length" 기반 Due는 즉시 줄어듦(요구사항 충족)
   }
 
-  showing = false;
   saveCards();
+  showing = false;
   updateUI();
 }
 
