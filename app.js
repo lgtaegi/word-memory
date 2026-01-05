@@ -1,5 +1,5 @@
 // ===== Default TXT =====
-const DEFAULT_TXT = "word_3000.txt";
+const DEFAULT_TXT = "words.txt";
 
 // ===== Storage =====
 const LS_CARDS = "wordmemo_cards_v2";
@@ -406,3 +406,4 @@ if ("serviceWorker" in navigator) {
 // ===== Init =====
 updateUI();
 loadDefaultTxtIfEmpty();
+
