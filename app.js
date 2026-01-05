@@ -5,6 +5,7 @@ const DEFAULT_TXT = "words.txt";
 const LS_CARDS = "wordmemo_cards_v2";
 const LS_UNKNOWN = "wordmemo_unknown_ids_v2";     // 누적 unknown
 const LS_WORDS_SIG = "wordmemo_words_sig_v1";     // words.txt 변경 감지용 (오픈 시 1회)
+const LS_CURRENT_FILE = "wordmemo_current_file";  // 현재 로드된(표시할) 파일명
 
 let cards = JSON.parse(localStorage.getItem(LS_CARDS) || "[]");
 let unknownIds = JSON.parse(localStorage.getItem(LS_UNKNOWN) || "[]");
@@ -29,6 +30,39 @@ function pushUnique(arr, id) {
 function resetSession() {
   sessionAllIds = [];
   sessionUnknownIds = [];
+}
+
+// ===== Current file label =====
+function setCurrentFile(name) {
+  localStorage.setItem(LS_CURRENT_FILE, name);
+  if ($("currentFile")) $("currentFile").textContent = name;
+}
+function getCurrentFile() {
+  return localStorage.getItem(LS_CURRENT_FILE) || "";
+}
+function loadCurrentFileLabel() {
+  const name = getCurrentFile();
+  if ($("currentFile")) $("currentFile").textContent = name || "–";
+}
+
+// words.txt 업데이트 표시(잠깐 표시했다가 원복)
+let _fileFlashTimer = null;
+function flashFileUpdatedLabel() {
+  const el = $("currentFile");
+  if (!el) return;
+
+  const current = getCurrentFile() || DEFAULT_TXT;
+  const base = current;
+
+  // 이미 다른 파일(myfile.txt)을 쓰는 중이면 굳이 words.txt 업데이트 표시로 혼동시키지 않음
+  if (base !== DEFAULT_TXT) return;
+
+  if (_fileFlashTimer) clearTimeout(_fileFlashTimer);
+
+  el.textContent = `${base}  ✅ UPDATED`;
+  _fileFlashTimer = setTimeout(() => {
+    el.textContent = base;
+  }, 1800);
 }
 
 // ===== Robust UTF-8 decoding helpers =====
@@ -239,7 +273,8 @@ async function sha256Hex(text) {
 }
 
 async function fetchWordsSignature() {
-  const bust = `?v=${Date.now()}`; // cache-bust for iPhone/PWA/SW
+  // cache-bust for iPhone/PWA/SW
+  const bust = `?v=${Date.now()}`;
   const res = await fetch(DEFAULT_TXT + bust, { cache: "no-store" });
   if (!res.ok) throw new Error(`words fetch failed: ${res.status}`);
 
@@ -280,17 +315,19 @@ function mergePreserveProgress(freshCards) {
   updateUI();
 }
 
-// check once on open/visible
+// check once on open/visible (NO interval polling)
 async function checkWordsUpdateOnOpen() {
   try {
     const prevSig = localStorage.getItem(LS_WORDS_SIG);
     const { sig, text } = await fetchWordsSignature();
 
+    // first run: store signature only
     if (!prevSig) {
       localStorage.setItem(LS_WORDS_SIG, sig);
       return;
     }
 
+    // changed: reload once
     if (sig !== prevSig) {
       const fresh = parseText(text);
       if (fresh.length === 0) {
@@ -299,7 +336,11 @@ async function checkWordsUpdateOnOpen() {
       }
 
       localStorage.setItem(LS_WORDS_SIG, sig);
+
+      // words.txt가 바뀌면(현재 파일이 words.txt일 때) 표시도 잠깐 업데이트
       mergePreserveProgress(fresh);
+      flashFileUpdatedLabel();
+
       console.log("✅ words.txt updated → reloaded on open");
     }
   } catch (e) {
@@ -397,6 +438,9 @@ async function loadDefaultTxtIfEmpty() {
     cards = parsed;
     saveCards();
 
+    // 표시: 현재 파일
+    setCurrentFile(DEFAULT_TXT);
+
     // Save initial signature so "open check" won't immediately reload
     try {
       const sigHash = await sha256Hex(text);
@@ -431,8 +475,8 @@ $("btnImport").onclick = async () => {
   cards = cards.concat(filtered);
   saveCards();
 
-  // update signature baseline to the imported content? (optional)
-  // Here: do nothing because import is manual list add.
+  // 표시: 현재 파일명은 사용자가 import한 파일명으로
+  setCurrentFile(file.name);
 
   $("file").value = "";
   showing = false;
@@ -450,6 +494,7 @@ $("btnClear").onclick = () => {
   resetSession();
   updateUI();
 
+  // Clear 후 기본 파일 자동 로드 → 파일명도 DEFAULT로 표시됨
   loadDefaultTxtIfEmpty();
 };
 
@@ -507,12 +552,21 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 
-// ===== Init =====
-updateUI();
-loadDefaultTxtIfEmpty();
+// ===== Init (async so we can await default load before update-check) =====
+(async function init() {
+  updateUI();
+  loadCurrentFileLabel();
 
-// ✅ check for words.txt update only when app opens / becomes visible
-checkWordsUpdateOnOpen();
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") checkWordsUpdateOnOpen();
-});
+  // 1) 기본 파일 로드 (cards가 비어있을 때만)
+  await loadDefaultTxtIfEmpty();
+
+  // 2) 앱 열릴 때만 words.txt 업데이트 체크 (주기 체크 없음)
+  await checkWordsUpdateOnOpen();
+
+  // 3) 백그라운드 → 포그라운드 복귀 시에도 1회 체크
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === "visible") {
+      await checkWordsUpdateOnOpen();
+    }
+  });
+})();
