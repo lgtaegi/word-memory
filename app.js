@@ -242,6 +242,11 @@ function updateUI() {
   const due = dueCards();
   $("due").textContent = `Due: ${due.length}`;
 
+  // ✅ Unknown 카운트는 항상(리턴 전에) 업데이트
+  if ($("unknownCount")) {
+    $("unknownCount").textContent = `Unknown: ${unknownIds.length}`;
+  }
+
   updateButtons();
 
   const badge = $("numBadge");
@@ -254,6 +259,32 @@ function updateUI() {
     if (badge) badge.classList.add("hidden");
     return;
   }
+
+  const card = due[0];
+
+  // 번호 표시
+  if (badge) {
+    if (card.num) {
+      badge.textContent = `#${card.num}`;
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+
+  $("prompt").textContent = card.term;
+
+  if (showing) {
+    $("answer").textContent = card.meaning;
+    $("answer").classList.remove("hidden");
+    $("gradeRow").classList.remove("hidden");
+    $("btnShow").classList.add("hidden");
+  } else {
+    $("answer").classList.add("hidden");
+    $("gradeRow").classList.add("hidden");
+    $("btnShow").classList.remove("hidden");
+  }
+}
 
   const card = due[0];
 
@@ -386,3 +417,4 @@ if ("serviceWorker" in navigator) {
 // ===== Init =====
 updateUI();
 loadDefaultTxtIfEmpty();
+
