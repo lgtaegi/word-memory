@@ -18,7 +18,7 @@ let sessionAllIds = [];
 // ✅ "세션에서 현재까지 아직 모르는 단어" (I forgot add / I knew remove)
 let sessionUnknownSet = new Set();
 
-// (세션 unknown export 시 순서 유지용)
+// (세션 unknown export 시 순서 유지용 — 필요하면 나중에 활용)
 let sessionUnknownOrder = [];
 
 const $ = (id) => document.getElementById(id);
@@ -140,6 +140,13 @@ function clearUnknownFilter(silent = false) {
   if (!silent) updateUI();
 }
 
+function doneAndExitUnknownMode() {
+  alert("Done!");
+  clearUnknownFilter(true);
+  showing = false;
+  updateUI();
+}
+
 /**
  * ✅ Repeat unknown (session)을 누를 때마다
  * 그 순간 최신 "세션 unknown 상태(sessionUnknownSet)"로 완전 리셋 시작
@@ -191,6 +198,7 @@ function getQueue() {
 function repeatAllSession() {
   if (sessionAllIds.length === 0) return;
 
+  // repeat all이면 unknown-only(필터) 해제
   clearUnknownFilter(true);
 
   const now = Date.now();
@@ -365,8 +373,6 @@ async function checkWordsUpdateOnOpen() {
 // ===== UI =====
 function updateButtons() {
   if ($("btnRepeatAll")) $("btnRepeatAll").disabled = sessionAllIds.length === 0;
-
-  // ✅ repeat unknown 기준도 세션 unknown 기준
   if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownSet.size === 0;
 
   if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownSet.size === 0;
@@ -387,8 +393,7 @@ function updateUI() {
 
   $("due").textContent = `Due: ${dueShown}`;
 
-  // ✅ 핵심 수정:
-  // 세션이 시작된 뒤에는 Repeat all / Repeat unknown 상관없이 Unknown 카운트는 동일(세션 unknown)
+  // ✅ 세션이 시작된 뒤에는 Repeat all / Repeat unknown 상관없이 Unknown 카운트 동일(세션 unknown)
   const sessionActive = sessionAllIds.length > 0;
 
   $("unknownCount").textContent = sessionActive
@@ -543,7 +548,7 @@ function gradeCurrent(knew) {
     c.level = 0;
     c.due = nextDue(0);
   } else {
-    // ✅ 세션 unknown 최신 상태: remove
+    // ✅ 세션 unknown 최신 상태: remove (Unknown 카운트 즉시 감소)
     if (sessionUnknownSet.has(c.id)) {
       sessionUnknownSet.delete(c.id);
     }
@@ -555,6 +560,14 @@ function gradeCurrent(knew) {
     if (unknownFilterOn && unknownFilterSet.has(c.id)) {
       unknownFilterSet.delete(c.id);
       unknownFilterIds = unknownFilterIds.filter(id => id !== c.id);
+
+      // ✅ 추가 업데이트: unknown-only에서 Unknown 0 되면 Done! + 자동 종료
+      if (unknownFilterSet.size === 0) {
+        saveCards();
+        showing = false;
+        doneAndExitUnknownMode();
+        return;
+      }
     }
   }
 
