@@ -54,7 +54,7 @@ function flashFileUpdatedLabel() {
   const current = getCurrentFile() || DEFAULT_TXT;
   const base = current;
 
-  // 이미 다른 파일(myfile.txt)을 쓰는 중이면 굳이 words.txt 업데이트 표시로 혼동시키지 않음
+  // 이미 다른 파일(myfile.txt)을 쓰는 중이면 words.txt 업데이트 표시로 혼동시키지 않음
   if (base !== DEFAULT_TXT) return;
 
   if (_fileFlashTimer) clearTimeout(_fileFlashTimer);
@@ -556,6 +556,11 @@ if ("serviceWorker" in navigator) {
 (async function init() {
   updateUI();
   loadCurrentFileLabel();
+
+  // ✅ FIX: cards가 이미 있는데 current file 표시가 비어 있으면 기본 파일로 보정
+  if (cards.length > 0 && !getCurrentFile()) {
+    setCurrentFile(DEFAULT_TXT);
+  }
 
   // 1) 기본 파일 로드 (cards가 비어있을 때만)
   await loadDefaultTxtIfEmpty();
