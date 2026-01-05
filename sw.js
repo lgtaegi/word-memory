@@ -1,11 +1,11 @@
-const CACHE = "wordmemo-v3"; // ← 버전 올림 (중요)
+const CACHE = "wordmemo-v4"; // ← 버전 올림 (중요)
 const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
   "./manifest.webmanifest",
-  "./word_3000.txt"
+  "./words.txt"
 ];
 
 self.addEventListener("install", (e) => {
@@ -36,3 +36,4 @@ self.addEventListener("fetch", (e) => {
       .catch(() => caches.match(e.request))
   );
 });
+
