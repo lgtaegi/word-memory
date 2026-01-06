@@ -4,8 +4,8 @@ const DEFAULT_TXT = "words.txt";
 // ===== Storage =====
 const LS_CARDS = "wordmemo_cards_v2";
 const LS_UNKNOWN = "wordmemo_unknown_ids_v2";     // 누적 unknown (ALL)
-const LS_WORDS_SIG = "wordmemo_words_sig_v1";     // words.txt 변경 감지용 (오픈 시 1회)
-const LS_CURRENT_FILE = "wordmemo_current_file";  // 현재 로드된(표시할) 파일명
+const LS_WORDS_SIG = "wordmemo_words_sig_v1";     // words.txt 변경 감지용
+const LS_CURRENT_FILE = "wordmemo_current_file";  // 현재 로드된 파일명
 
 let cards = JSON.parse(localStorage.getItem(LS_CARDS) || "[]");
 let unknownIds = JSON.parse(localStorage.getItem(LS_UNKNOWN) || "[]");
@@ -14,14 +14,27 @@ let showing = false;
 
 // ===== Session tracking =====
 let sessionAllIds = [];
-let sessionUnknownIds = [];
+
+// ✅ "세션에서 현재까지 아직 모르는 단어" (I forgot add / I knew remove)
+let sessionUnknownSet = new Set();
+
+// (세션 unknown export 시 순서 유지용 — 필요하면 나중에 활용)
+let sessionUnknownOrder = [];
 
 const $ = (id) => document.getElementById(id);
 
 function saveCards() { localStorage.setItem(LS_CARDS, JSON.stringify(cards)); }
 function saveUnknown() { localStorage.setItem(LS_UNKNOWN, JSON.stringify(unknownIds)); }
-function pushUnique(arr, id) { if (!arr.includes(id)) arr.push(id); }
-function resetSession() { sessionAllIds = []; sessionUnknownIds = []; }
+
+function pushUnique(arr, id) {
+  if (!arr.includes(id)) arr.push(id);
+}
+
+function resetSession() {
+  sessionAllIds = [];
+  sessionUnknownSet = new Set();
+  sessionUnknownOrder = [];
+}
 
 // ===== Current file label =====
 function setCurrentFile(name) {
@@ -56,8 +69,8 @@ function stripLeadingNumber(s) {
 // ===== TXT Parsing =====
 function parseText(text) {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-
   const out = [];
+
   for (const rawLine of lines) {
     const { num, rest } = stripLeadingNumber(rawLine);
 
@@ -103,14 +116,14 @@ function nextDue(level) {
 }
 
 // =====================================================
-// ✅ Unknown-only 반복: UI는 그대로, "FILTER"만 ON/OFF
+// ✅ Unknown-only 반복: UI 그대로, FILTER ON/OFF
 // =====================================================
 let unknownFilterOn = false;
 
-// "남아있는 unknown 단어" (I knew로만 줄어듦)
+// unknown-only에서 "남아있는 unknown" (I knew로 줄어듦)
 let unknownFilterSet = new Set();
 
-// 시작 그룹(버튼 누르는 순간의 스냅샷)
+// 시작 그룹(버튼 누르는 순간 스냅샷)
 let unknownFilterIds = [];
 
 function setStudyHintVisible(on) {
@@ -127,14 +140,19 @@ function clearUnknownFilter(silent = false) {
   if (!silent) updateUI();
 }
 
+function doneAndExitUnknownMode() {
+  alert("Done!");
+  clearUnknownFilter(true);
+  showing = false;
+  updateUI();
+}
+
 /**
- * ✅ 핵심 요구사항:
- * Repeat unknown (session)을 누를 때마다
- * "그 순간의 최신 sessionUnknownIds"로 스냅샷을 잡고
- * 완전히 리셋해서 다시 시작한다.
+ * ✅ Repeat unknown (session)을 누를 때마다
+ * 그 순간 최신 "세션 unknown 상태(sessionUnknownSet)"로 완전 리셋 시작
  */
 function startUnknownFilterFromSession() {
-  const snapshot = Array.from(new Set(sessionUnknownIds)); // 최신 + 중복제거
+  const snapshot = Array.from(sessionUnknownSet);
 
   if (snapshot.length === 0) {
     clearUnknownFilter(true);
@@ -143,12 +161,11 @@ function startUnknownFilterFromSession() {
     return;
   }
 
-  // ✅ 매번 완전 리셋
   unknownFilterOn = true;
   unknownFilterIds = snapshot;
   unknownFilterSet = new Set(snapshot);
 
-  // ✅ 바로 다시 시작되도록 due를 now로 당김
+  // 다시 시작되도록 due를 now로 당김
   const now = Date.now();
   for (const id of unknownFilterIds) {
     const idx = cards.findIndex(c => c.id === id);
@@ -156,7 +173,7 @@ function startUnknownFilterFromSession() {
   }
   saveCards();
 
-  // ✅ 매번 "처음 시작" 느낌으로 상태 초기화
+  // "다시 시작" 느낌으로 UI 상태 초기화
   showing = false;
   $("answer")?.classList.add("hidden");
   $("gradeRow")?.classList.add("hidden");
@@ -181,6 +198,7 @@ function getQueue() {
 function repeatAllSession() {
   if (sessionAllIds.length === 0) return;
 
+  // repeat all이면 unknown-only(필터) 해제
   clearUnknownFilter(true);
 
   const now = Date.now();
@@ -226,12 +244,14 @@ function dateStamp() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// ✅ 세션 unknown은 "현재 sessionUnknownSet" 기준으로 export
 function exportUnknownSessionTxt() {
-  if (sessionUnknownIds.length === 0) {
+  const ids = Array.from(sessionUnknownSet);
+  if (ids.length === 0) {
     alert("No unknown words in this session yet.");
     return;
   }
-  const list = getCardsByIds(sessionUnknownIds);
+  const list = getCardsByIds(ids);
   if (!list.length) return alert("Unknown words not found (maybe cleared).");
   downloadTextFile(`unknown_session_${dateStamp()}.txt`, buildTxt(list));
 }
@@ -353,9 +373,9 @@ async function checkWordsUpdateOnOpen() {
 // ===== UI =====
 function updateButtons() {
   if ($("btnRepeatAll")) $("btnRepeatAll").disabled = sessionAllIds.length === 0;
-  if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownIds.length === 0;
+  if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownSet.size === 0;
 
-  if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownIds.length === 0;
+  if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownSet.size === 0;
   if ($("btnExportUnknownAll")) $("btnExportUnknownAll").disabled = unknownIds.length === 0;
   if ($("btnShareUnknownAll")) $("btnShareUnknownAll").disabled = unknownIds.length === 0;
   if ($("btnClearUnknownAll")) $("btnClearUnknownAll").disabled = unknownIds.length === 0;
@@ -366,16 +386,18 @@ function updateUI() {
 
   const queue = getQueue();
 
-  // ✅ 핵심: unknown-only일 때 Due는 "현재 큐 길이" (I knew / I forgot 둘 다 줄어듦)
+  // ✅ unknown-only이면 Due는 "현재 큐 길이"
   const dueShown = unknownFilterOn
     ? queue.length
     : cards.filter(c => (c.due || 0) <= Date.now()).length;
 
   $("due").textContent = `Due: ${dueShown}`;
 
-  // ✅ Unknown은 "남아있는 unknown 단어 수" (I knew로만 줄어듦)
-  $("unknownCount").textContent = unknownFilterOn
-    ? `Unknown: ${unknownFilterSet.size}`
+  // ✅ 세션이 시작된 뒤에는 Repeat all / Repeat unknown 상관없이 Unknown 카운트 동일(세션 unknown)
+  const sessionActive = sessionAllIds.length > 0;
+
+  $("unknownCount").textContent = sessionActive
+    ? `Unknown: ${sessionUnknownSet.size}`
     : `Unknown: ${unknownIds.length}`;
 
   setStudyHintVisible(unknownFilterOn);
@@ -478,10 +500,7 @@ $("btnImport").onclick = async () => {
 
   setCurrentFile(file.name);
 
-  // import하면 unknown-only 해제
   clearUnknownFilter(true);
-
-  $("file").value = "";
   showing = false;
   resetSession();
   updateUI();
@@ -494,9 +513,8 @@ $("btnClear").onclick = async () => {
   saveCards();
 
   clearUnknownFilter(true);
-  resetSession();
-
   showing = false;
+  resetSession();
   updateUI();
 
   await loadDefaultTxtIfEmpty();
@@ -515,34 +533,42 @@ function gradeCurrent(knew) {
   pushUnique(sessionAllIds, c.id);
 
   if (!knew) {
-    pushUnique(sessionUnknownIds, c.id);
-    pushUnique(unknownIds, c.id);
-    saveUnknown();
-  }
+    // ✅ 세션 unknown 최신 상태: add
+    if (!sessionUnknownSet.has(c.id)) {
+      sessionUnknownSet.add(c.id);
+      pushUnique(sessionUnknownOrder, c.id);
+    }
 
-  if (knew) {
+    // ✅ 누적 unknown(ALL)에도 저장
+    if (!unknownIds.includes(c.id)) {
+      unknownIds.push(c.id);
+      saveUnknown();
+    }
+
+    c.level = 0;
+    c.due = nextDue(0);
+  } else {
+    // ✅ 세션 unknown 최신 상태: remove (Unknown 카운트 즉시 감소)
+    if (sessionUnknownSet.has(c.id)) {
+      sessionUnknownSet.delete(c.id);
+    }
+
     c.level = Math.min((c.level || 0) + 1, 5);
     c.due = nextDue(c.level);
 
-    // unknown-only이면: I knew → 남아있는 unknown에서 제거
+    // unknown-only 필터 중이면 "남은 unknown"에서도 제거
     if (unknownFilterOn && unknownFilterSet.has(c.id)) {
       unknownFilterSet.delete(c.id);
       unknownFilterIds = unknownFilterIds.filter(id => id !== c.id);
 
-      // 남은 unknown이 0이면 필터 종료 (원하면 alert 추가 가능)
+      // ✅ 추가 업데이트: unknown-only에서 Unknown 0 되면 Done! + 자동 종료
       if (unknownFilterSet.size === 0) {
         saveCards();
         showing = false;
-        clearUnknownFilter(true);
-        updateUI();
+        doneAndExitUnknownMode();
         return;
       }
     }
-  } else {
-    c.level = 0;
-    c.due = nextDue(0);
-    // unknown-only에서 I forgot을 누르면 due가 미래로 가면서 queue에서 빠지므로
-    // Due(=queue.length)는 즉시 줄어듦 ✅
   }
 
   saveCards();
