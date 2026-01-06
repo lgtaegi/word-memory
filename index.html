@@ -1,50 +1,99 @@
-<!-- STUDY -->
-<section class="card">
-  <!-- ✅ Study 위 작은 글씨 (unknown-only일 때만 보임) -->
-  <p id="studyHint" class="hint small hidden" style="margin:0 0 8px 0;">
-    Unknown words
-  </p>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#111111" />
+  <title>Word Memo</title>
 
-  <div class="row space">
-    <div class="row" style="gap:10px; align-items:baseline;">
-      <h2 style="margin:0;">Study</h2>
-    </div>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <h1>Word Memo</h1>
+    <p class="sub">Simple SRS · Repeat · Unknown Export</p>
+  </header>
 
-    <div class="pillCol">
-      <span id="due" class="pill">Due: 0</span>
-      <span id="unknownCount" class="pill">Unknown: 0</span>
-    </div>
-  </div>
+  <main class="wrap">
+    <!-- IMPORT -->
+    <section class="card">
+      <h2>Import words (.txt)</h2>
+      <p class="hint">
+        Format: <code>[optional number] word&lt;TAB&gt;meaning</code>
+      </p>
 
-  <div class="promptWrap">
-    <div id="numBadge" class="numBadge hidden"></div>
-    <div id="prompt" class="prompt">Import a txt file to start.</div>
-  </div>
+      <div class="row">
+        <input id="file" type="file" accept=".txt,text/plain" />
+        <button id="btnImport" class="primary">Import</button>
+        <button id="btnClear" class="danger">Clear all</button>
+      </div>
 
-  <div id="answer" class="answer hidden"></div>
+      <p id="stat" class="stat">Cards: 0</p>
 
-  <div class="controls">
-    <button id="btnShow" class="primary">Show meaning</button>
+      <p class="hint small">
+        Current file: <code id="currentFile">–</code>
+      </p>
+    </section>
 
-    <div id="gradeRow" class="row hidden">
-      <button id="btnForgot" class="ghost">I forgot</button>
-      <button id="btnKnew" class="primary">I knew</button>
-    </div>
+    <!-- STUDY -->
+    <section class="card">
+      <!-- ✅ Study 위 작은 글씨 (unknown-only일 때만 보임) -->
+      <p id="studyHint" class="hint small hidden" style="margin:0 0 8px 0;">
+        Unknown words
+      </p>
 
-    <div class="repeatRow">
-      <button id="btnRepeatAll" class="ghost">Repeat all (session)</button>
-      <button id="btnRepeatUnknown" class="ghost">Repeat unknown (session)</button>
-    </div>
+      <div class="row space">
+        <div class="row" style="gap:10px; align-items:baseline;">
+          <h2 style="margin:0;">Study</h2>
+        </div>
 
-    <div class="repeatRow">
-      <button id="btnExportUnknownSession" class="ghost">Download unknown (session)</button>
-      <button id="btnExportUnknownAll" class="ghost">Download unknown (ALL)</button>
-      <button id="btnShareUnknownAll" class="ghost">Share / Save unknown</button>
-      <button id="btnClearUnknownAll" class="ghost">Clear unknown list</button>
-    </div>
-  </div>
+        <div class="pillCol">
+          <span id="due" class="pill">Due: 0</span>
+          <span id="unknownCount" class="pill">Unknown: 0</span>
+        </div>
+      </div>
 
-  <p class="hint small">
-    forgot → 10 min · knew → 1d / 3d / 7d / 14d / 30d
-  </p>
-</section>
+      <div class="promptWrap">
+        <div id="numBadge" class="numBadge hidden"></div>
+        <div id="prompt" class="prompt">Import a txt file to start.</div>
+      </div>
+
+      <div id="answer" class="answer hidden"></div>
+
+      <div class="controls">
+        <button id="btnShow" class="primary">Show meaning</button>
+
+        <div id="gradeRow" class="row hidden">
+          <button id="btnForgot" class="ghost">I forgot</button>
+          <button id="btnKnew" class="primary">I knew</button>
+        </div>
+
+        <div class="repeatRow">
+          <button id="btnRepeatAll" class="ghost">Repeat all (session)</button>
+          <button id="btnRepeatUnknown" class="ghost">Repeat unknown (session)</button>
+        </div>
+
+        <div class="repeatRow">
+          <button id="btnExportUnknownSession" class="ghost">Download unknown (session)</button>
+          <button id="btnExportUnknownAll" class="ghost">Download unknown (ALL)</button>
+          <button id="btnShareUnknownAll" class="ghost">Share / Save unknown</button>
+          <button id="btnClearUnknownAll" class="ghost">Clear unknown list</button>
+        </div>
+      </div>
+
+      <p class="hint small">
+        forgot → 10 min · knew → 1d / 3d / 7d / 14d / 30d
+      </p>
+    </section>
+
+    <footer class="foot">
+      <p class="small muted">
+        iPhone: Safari → Share → Add to Home Screen
+      </p>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
