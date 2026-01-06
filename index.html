@@ -1,4 +1,3 @@
-<!-- index.html (FINAL) -->
 <!doctype html>
 <html lang="en">
 <head>
@@ -39,23 +38,22 @@
 
     <!-- STUDY -->
     <section class="card">
-      <div class="row space">
-        <div class="row" style="gap:10px; align-items:center;">
-          <h2 style="margin:0;">Study</h2>
+      <!-- ✅ Study 위 작은 글씨 (unknown-only일 때만 보임) -->
+      <p id="studyHint" class="hint small hidden" style="margin:0 0 8px 0;">
+        Unknown words
+      </p>
 
-          <!-- ✅ MODE BADGE + EXIT (hidden by default) -->
-          <span id="modeBadge" class="pill hidden">MODE: Unknown Session</span>
-          <button id="btnExitMode" class="ghost hidden" type="button">Exit</button>
+      <div class="row space">
+        <div class="row" style="gap:10px; align-items:baseline;">
+          <h2 style="margin:0;">Study</h2>
         </div>
 
-        <!-- right aligned: Due on top, Unknown under it -->
         <div class="pillCol">
           <span id="due" class="pill">Due: 0</span>
           <span id="unknownCount" class="pill">Unknown: 0</span>
         </div>
       </div>
 
-      <!-- WORD + NUMBER -->
       <div class="promptWrap">
         <div id="numBadge" class="numBadge hidden"></div>
         <div id="prompt" class="prompt">Import a txt file to start.</div>
@@ -77,18 +75,10 @@
         </div>
 
         <div class="repeatRow">
-          <button id="btnExportUnknownSession" class="ghost">
-            Download unknown (session)
-          </button>
-          <button id="btnExportUnknownAll" class="ghost">
-            Download unknown (ALL)
-          </button>
-          <button id="btnShareUnknownAll" class="ghost">
-            Share / Save unknown
-          </button>
-          <button id="btnClearUnknownAll" class="ghost">
-            Clear unknown list
-          </button>
+          <button id="btnExportUnknownSession" class="ghost">Download unknown (session)</button>
+          <button id="btnExportUnknownAll" class="ghost">Download unknown (ALL)</button>
+          <button id="btnShareUnknownAll" class="ghost">Share / Save unknown</button>
+          <button id="btnClearUnknownAll" class="ghost">Clear unknown list</button>
         </div>
       </div>
 
