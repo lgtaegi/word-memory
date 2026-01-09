@@ -1,242 +1,33 @@
-// ===== Default TXT =====
+/*
+  Word Memo
+  Version: 1.01
+  Changes:
+  - Confirm dialog for "Repeat all (session)"
+  - Track today's "I forgot" counts and provide "Top 10 forgot (today)" study mode
+  - When Top10 mode finishes, it auto-closes (no Done popup)
+*/
+
 const DEFAULT_TXT = "words.txt";
 
-// ===== Storage =====
-const LS_CARDS = "wordmemo_cards_v2";
-const LS_UNKNOWN = "wordmemo_unknown_ids_v2";     // 누적 unknown (ALL)
-const LS_WORDS_SIG = "wordmemo_words_sig_v1";     // words.txt 변경 감지용
-const LS_CURRENT_FILE = "wordmemo_current_file";  // 현재 로드된 파일명
+// 저장 (기존 v1.0은 메모리-only였지만, Top10 카운트는 저장해야 해서 추가)
+const LS_FORGOT_STATS = "wordmemo_forgot_stats_v1";
 
-let cards = JSON.parse(localStorage.getItem(LS_CARDS) || "[]");
-let unknownIds = JSON.parse(localStorage.getItem(LS_UNKNOWN) || "[]");
+let cards = [];
+let sessionAllIds = [];
+let sessionUnknownSet = new Set();
 
 let showing = false;
 
-// ===== Session tracking =====
-let sessionAllIds = [];
-
-// ✅ "세션에서 현재까지 아직 모르는 단어" (I forgot add / I knew remove)
-let sessionUnknownSet = new Set();
-
-// (세션 unknown export 시 순서 유지용 — 필요하면 나중에 활용)
-let sessionUnknownOrder = [];
+// ===== Top10 mode =====
+let top10ModeOn = false;
+let top10Set = new Set();
 
 const $ = (id) => document.getElementById(id);
 
-function saveCards() { localStorage.setItem(LS_CARDS, JSON.stringify(cards)); }
-function saveUnknown() { localStorage.setItem(LS_UNKNOWN, JSON.stringify(unknownIds)); }
-
-function pushUnique(arr, id) {
-  if (!arr.includes(id)) arr.push(id);
-}
-
-function resetSession() {
-  sessionAllIds = [];
-  sessionUnknownSet = new Set();
-  sessionUnknownOrder = [];
-}
-
-// ===== Current file label =====
-function setCurrentFile(name) {
-  localStorage.setItem(LS_CURRENT_FILE, name);
-  if ($("currentFile")) $("currentFile").textContent = name;
-}
-function getCurrentFile() {
-  return localStorage.getItem(LS_CURRENT_FILE) || "";
-}
-function loadCurrentFileLabel() {
-  const name = getCurrentFile();
-  if ($("currentFile")) $("currentFile").textContent = name || "–";
-}
-
-// ===== Robust UTF-8 decoding =====
-async function responseToTextUTF8(res) {
-  const buf = await res.arrayBuffer();
-  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
-}
-async function fileToTextUTF8(file) {
-  const buf = await file.arrayBuffer();
-  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
-}
-
-// ===== Parse optional leading number =====
-function stripLeadingNumber(s) {
-  const m = s.match(/^\s*(\d{1,5})\s*(?:[.)：:]\s*|-\s+)\s*(.+)$/);
-  if (!m) return { num: null, rest: s.trim() };
-  return { num: m[1], rest: (m[2] || "").trim() };
-}
-
-// ===== TXT Parsing =====
-function parseText(text) {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const out = [];
-
-  for (const rawLine of lines) {
-    const { num, rest } = stripLeadingNumber(rawLine);
-
-    let term = "";
-    let meaning = "";
-
-    if (rest.includes("\t")) {
-      const parts = rest.split("\t");
-      term = (parts[0] || "").trim();
-      meaning = (parts.slice(1).join("\t") || "").trim();
-    } else if (rest.includes(" - ")) {
-      const parts = rest.split(" - ");
-      term = (parts[0] || "").trim();
-      meaning = (parts.slice(1).join(" - ") || "").trim();
-    } else if (rest.includes("-")) {
-      const idx = rest.indexOf("-");
-      term = rest.slice(0, idx).trim();
-      meaning = rest.slice(idx + 1).trim();
-    } else {
-      continue;
-    }
-
-    if (!term || !meaning) continue;
-
-    out.push({
-      id: (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2),
-      num,
-      term,
-      meaning,
-      level: 0,
-      due: Date.now()
-    });
-  }
-  return out;
-}
-
-// ===== SRS =====
-function nextDue(level) {
-  const days = [0, 1, 3, 7, 14, 30];
-  const lvl = Math.max(0, Math.min(5, level));
-  if (lvl === 0) return Date.now() + 10 * 60 * 1000; // 10 min
-  return Date.now() + days[lvl] * 86400000;
-}
-
-// =====================================================
-// ✅ Unknown-only 반복: UI 그대로, FILTER ON/OFF
-// =====================================================
-let unknownFilterOn = false;
-
-// unknown-only에서 "남아있는 unknown" (I knew로 줄어듦)
-let unknownFilterSet = new Set();
-
-// 시작 그룹(버튼 누르는 순간 스냅샷)
-let unknownFilterIds = [];
-
-function setStudyHintVisible(on) {
-  const el = $("studyHint");
-  if (!el) return;
-  el.classList.toggle("hidden", !on);
-}
-
-function clearUnknownFilter(silent = false) {
-  unknownFilterOn = false;
-  unknownFilterSet = new Set();
-  unknownFilterIds = [];
-  setStudyHintVisible(false);
-  if (!silent) updateUI();
-}
-
-function doneAndExitUnknownMode() {
-  alert("Done!");
-  clearUnknownFilter(true);
-  showing = false;
-  updateUI();
-}
-
-/**
- * ✅ Repeat unknown (session)을 누를 때마다
- * 그 순간 최신 "세션 unknown 상태(sessionUnknownSet)"로 완전 리셋 시작
- */
-function startUnknownFilterFromSession() {
-  const snapshot = Array.from(sessionUnknownSet);
-
-  if (snapshot.length === 0) {
-    clearUnknownFilter(true);
-    updateUI();
-    alert("No unknown words in this session yet.");
-    return;
-  }
-
-  unknownFilterOn = true;
-  unknownFilterIds = snapshot;
-  unknownFilterSet = new Set(snapshot);
-
-  // 다시 시작되도록 due를 now로 당김
-  const now = Date.now();
-  for (const id of unknownFilterIds) {
-    const idx = cards.findIndex(c => c.id === id);
-    if (idx >= 0) cards[idx].due = now;
-  }
-  saveCards();
-
-  // "다시 시작" 느낌으로 UI 상태 초기화
-  showing = false;
-  $("answer")?.classList.add("hidden");
-  $("gradeRow")?.classList.add("hidden");
-  $("btnShow")?.classList.remove("hidden");
-
-  setStudyHintVisible(true);
-  updateUI();
-}
-
-function getUnknownQueue() {
-  const now = Date.now();
-  return cards.filter(c => unknownFilterSet.has(c.id) && (c.due || 0) <= now);
-}
-
-function getQueue() {
-  if (unknownFilterOn) return getUnknownQueue();
-  const now = Date.now();
-  return cards.filter(c => (c.due || 0) <= now);
-}
-
-// ===== Repeat all (session) =====
-function repeatAllSession() {
-  if (sessionAllIds.length === 0) return;
-
-  // repeat all이면 unknown-only(필터) 해제
-  clearUnknownFilter(true);
-
-  const now = Date.now();
-  for (const id of sessionAllIds) {
-    const idx = cards.findIndex(c => c.id === id);
-    if (idx >= 0) cards[idx].due = now;
-  }
-  saveCards();
-
-  showing = false;
-  updateUI();
-}
-
-// ===== Unknown export helpers =====
-function getCardsByIds(ids) {
-  return ids.map(id => cards.find(c => c.id === id)).filter(Boolean);
-}
-
-function buildTxt(cardsArr) {
-  return cardsArr.map(c => {
-    const prefix = c.num ? `${c.num}. ` : "";
-    return `${prefix}${c.term}\t${c.meaning}`;
-  }).join("\n");
-}
-
-function downloadTextFile(filename, text) {
-  const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function dateStamp() {
+// =========================
+// Date key (local date)
+// =========================
+function todayKey() {
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -244,371 +35,317 @@ function dateStamp() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// ✅ 세션 unknown은 "현재 sessionUnknownSet" 기준으로 export
-function exportUnknownSessionTxt() {
-  const ids = Array.from(sessionUnknownSet);
-  if (ids.length === 0) {
-    alert("No unknown words in this session yet.");
-    return;
-  }
-  const list = getCardsByIds(ids);
-  if (!list.length) return alert("Unknown words not found (maybe cleared).");
-  downloadTextFile(`unknown_session_${dateStamp()}.txt`, buildTxt(list));
-}
-
-function exportUnknownAllTxt() {
-  if (unknownIds.length === 0) {
-    alert("Unknown list is empty.");
-    return;
-  }
-  const list = getCardsByIds(unknownIds);
-  if (!list.length) return alert("Unknown words not found (maybe cleared).");
-  downloadTextFile(`unknown_ALL_${dateStamp()}.txt`, buildTxt(list));
-}
-
-async function shareUnknownAll() {
-  if (unknownIds.length === 0) {
-    alert("Unknown list is empty.");
-    return;
-  }
-  const list = getCardsByIds(unknownIds);
-  if (!list.length) return alert("Unknown words not found (maybe cleared).");
-
-  const filename = `unknown_ALL_${dateStamp()}.txt`;
-  const text = buildTxt(list);
-  const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
-
-  if (navigator.share && window.File) {
-    try {
-      const file = new File([blob], filename, { type: "text/plain" });
-      await navigator.share({ files: [file], title: filename, text: "Unknown words" });
-      return;
-    } catch (e) {}
-  }
-  downloadTextFile(filename, text);
-}
-
-function clearUnknownAll() {
-  if (!confirm("Clear ALL unknown words list?")) return;
-  unknownIds = [];
-  saveUnknown();
-  updateUI();
-  alert("Unknown list cleared.");
-}
-
-// ===== words.txt update check (open/visible only) =====
-async function sha256Hex(text) {
-  const enc = new TextEncoder().encode(text);
-  const buf = await crypto.subtle.digest("SHA-256", enc);
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function fetchWordsSignature() {
-  const bust = `?v=${Date.now()}`;
-  const res = await fetch(DEFAULT_TXT + bust, { cache: "no-store" });
-  if (!res.ok) throw new Error(`words fetch failed: ${res.status}`);
-  const text = await responseToTextUTF8(res);
-  const hash = await sha256Hex(text);
-  return { sig: `B:${hash}`, text };
-}
-
-function mergePreserveProgress(freshCards) {
-  const oldMap = new Map(cards.map(c => [c.term.toLowerCase(), c]));
-
-  const merged = freshCards.map(nc => {
-    const key = nc.term.toLowerCase();
-    const old = oldMap.get(key);
-    if (old) return { ...old, num: nc.num ?? old.num ?? null, term: nc.term, meaning: nc.meaning };
-    return nc;
-  });
-
-  cards = merged;
-  saveCards();
-
-  const existingIds = new Set(cards.map(c => c.id));
-  unknownIds = unknownIds.filter(id => existingIds.has(id));
-  saveUnknown();
-
-  if (unknownFilterOn) {
-    unknownFilterIds = unknownFilterIds.filter(id => existingIds.has(id));
-    unknownFilterSet = new Set([...unknownFilterSet].filter(id => existingIds.has(id)));
-  }
-
-  resetSession();
-  showing = false;
-  updateUI();
-}
-
-async function checkWordsUpdateOnOpen() {
+// =========================
+// Forgot stats store
+// stats = { "YYYY-MM-DD": { [cardId]: count, ... }, ... }
+// =========================
+function loadForgotStats() {
   try {
-    const currentFile = getCurrentFile();
-    if (currentFile && currentFile !== DEFAULT_TXT) return;
+    return JSON.parse(localStorage.getItem(LS_FORGOT_STATS) || "{}");
+  } catch {
+    return {};
+  }
+}
+function saveForgotStats(stats) {
+  localStorage.setItem(LS_FORGOT_STATS, JSON.stringify(stats));
+}
 
-    const prevSig = localStorage.getItem(LS_WORDS_SIG);
-    const { sig, text } = await fetchWordsSignature();
+function bumpForgotCount(cardId) {
+  const key = todayKey();
+  const stats = loadForgotStats();
+  if (!stats[key]) stats[key] = {};
+  stats[key][cardId] = (stats[key][cardId] || 0) + 1;
+  saveForgotStats(stats);
+}
 
-    if (!prevSig) {
-      localStorage.setItem(LS_WORDS_SIG, sig);
-      return;
-    }
+function getTop10ForgotIdsToday() {
+  const key = todayKey();
+  const stats = loadForgotStats();
+  const day = stats[key] || {};
+  const entries = Object.entries(day); // [id, count]
 
-    if (sig !== prevSig) {
-      const fresh = parseText(text);
-      if (fresh.length === 0) return;
+  // count desc
+  entries.sort((a, b) => (b[1] || 0) - (a[1] || 0));
 
-      localStorage.setItem(LS_WORDS_SIG, sig);
-      mergePreserveProgress(fresh);
+  // top 10 ids that still exist in cards
+  const existing = new Set(cards.map(c => c.id));
+  const ids = [];
+  for (const [id] of entries) {
+    if (existing.has(id)) ids.push(id);
+    if (ids.length >= 10) break;
+  }
+  return ids;
+}
 
-      const el = $("currentFile");
-      if (el) {
-        el.textContent = `${DEFAULT_TXT}  ✅ UPDATED`;
-        setTimeout(() => { el.textContent = DEFAULT_TXT; }, 1800);
-      }
-    }
+// =========================
+// Load default words.txt
+// =========================
+async function loadDefault() {
+  if (cards.length > 0) return;
+
+  try {
+    const res = await fetch(DEFAULT_TXT);
+    if (!res.ok) throw new Error("fetch failed");
+
+    const text = await res.text();
+    cards = parseText(text);
+
+    $("currentFile").textContent = DEFAULT_TXT;
+    updateUI();
   } catch (e) {
-    console.warn("checkWordsUpdateOnOpen error:", e);
+    $("prompt").textContent = "Failed to load words.txt";
   }
 }
 
-// ===== UI =====
-function updateButtons() {
-  if ($("btnRepeatAll")) $("btnRepeatAll").disabled = sessionAllIds.length === 0;
-  if ($("btnRepeatUnknown")) $("btnRepeatUnknown").disabled = sessionUnknownSet.size === 0;
+// =========================
+// Parse text
+// =========================
+function parseText(text) {
+  return text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(line => {
+      let term = "", meaning = "";
 
-  if ($("btnExportUnknownSession")) $("btnExportUnknownSession").disabled = sessionUnknownSet.size === 0;
-  if ($("btnExportUnknownAll")) $("btnExportUnknownAll").disabled = unknownIds.length === 0;
-  if ($("btnShareUnknownAll")) $("btnShareUnknownAll").disabled = unknownIds.length === 0;
-  if ($("btnClearUnknownAll")) $("btnClearUnknownAll").disabled = unknownIds.length === 0;
+      if (line.includes("\t")) {
+        [term, meaning] = line.split("\t");
+      } else if (line.includes(" - ")) {
+        [term, meaning] = line.split(" - ");
+      } else {
+        return null;
+      }
+
+      return {
+        id: Math.random().toString(36).slice(2),
+        term: term.trim(),
+        meaning: meaning.trim(),
+        level: 0,
+        due: Date.now()
+      };
+    })
+    .filter(Boolean);
 }
 
+// =========================
+// SRS
+// =========================
+function nextDue(level) {
+  if (level === 0) return Date.now() + 10 * 60 * 1000;
+  const days = [1, 3, 7, 14, 30];
+  return Date.now() + days[level - 1] * 86400000;
+}
+
+// ✅ 큐: Top10 모드면 Top10만
+function getQueue() {
+  const now = Date.now();
+  if (top10ModeOn) {
+    return cards.filter(c => top10Set.has(c.id) && c.due <= now);
+  }
+  return cards.filter(c => c.due <= now);
+}
+
+// Top10 mode가 끝나면(큐 0) 자동으로 그냥 종료
+function autoCloseTop10IfFinished() {
+  if (!top10ModeOn) return;
+  const q = getQueue();
+  if (q.length === 0) {
+    top10ModeOn = false;
+    top10Set = new Set();
+    showing = false;
+  }
+}
+
+// =========================
+// UI
+// =========================
 function updateUI() {
   $("stat").textContent = `Cards: ${cards.length}`;
 
+  // Due: Top10 모드에서는 "Top10 남은 개수"가 due처럼 보이게
+  $("due").textContent = `Due: ${getQueue().length}`;
+
+  // Unknown: v1.0처럼 세션 unknown 유지
+  $("unknownCount").textContent = `Unknown: ${sessionUnknownSet.size}`;
+
   const queue = getQueue();
 
-  // ✅ unknown-only이면 Due는 "현재 큐 길이"
-  const dueShown = unknownFilterOn
-    ? queue.length
-    : cards.filter(c => (c.due || 0) <= Date.now()).length;
-
-  $("due").textContent = `Due: ${dueShown}`;
-
-  // ✅ 세션이 시작된 뒤에는 Repeat all / Repeat unknown 상관없이 Unknown 카운트 동일(세션 unknown)
-  const sessionActive = sessionAllIds.length > 0;
-
-  $("unknownCount").textContent = sessionActive
-    ? `Unknown: ${sessionUnknownSet.size}`
-    : `Unknown: ${unknownIds.length}`;
-
-  setStudyHintVisible(unknownFilterOn);
-  updateButtons();
-
-  const badge = $("numBadge");
-
   if (!queue.length) {
-    $("prompt").textContent = cards.length ? "No cards due 🎉" : "Import a txt file to start.";
-    $("answer").classList.add("hidden");
-    $("btnShow").classList.add("hidden");
-    $("gradeRow").classList.add("hidden");
-    if (badge) badge.classList.add("hidden");
-    return;
+    // Top10 모드였고 다 끝났으면, 팝업 없이 자동 종료 후 다시 UI 갱신
+    if (top10ModeOn) {
+      autoCloseTop10IfFinished();
+      // 종료되었으니 일반 큐 기준으로 다시 그리기
+      $("due").textContent = `Due: ${getQueue().length}`;
+    }
+
+    const q2 = getQueue();
+    if (!q2.length) {
+      $("prompt").textContent = "No cards due 🎉";
+      $("answer").style.display = "none";
+      $("btnShow").style.display = "none";
+      $("gradeRow").style.display = "none";
+      return;
+    }
   }
 
-  const card = queue[0];
-
-  if (badge) {
-    if (card.num) {
-      badge.textContent = `#${card.num}`;
-      badge.classList.remove("hidden");
-    } else {
-      badge.classList.add("hidden");
-    }
+  const card = getQueue()[0];
+  if (!card) {
+    $("prompt").textContent = "No cards due 🎉";
+    $("answer").style.display = "none";
+    $("btnShow").style.display = "none";
+    $("gradeRow").style.display = "none";
+    return;
   }
 
   $("prompt").textContent = card.term;
 
   if (showing) {
     $("answer").textContent = card.meaning;
-    $("answer").classList.remove("hidden");
-    $("gradeRow").classList.remove("hidden");
-    $("btnShow").classList.add("hidden");
+    $("answer").style.display = "block";
+    $("gradeRow").style.display = "block";
+    $("btnShow").style.display = "none";
   } else {
-    $("answer").classList.add("hidden");
-    $("gradeRow").classList.add("hidden");
-    $("btnShow").classList.remove("hidden");
+    $("answer").style.display = "none";
+    $("gradeRow").style.display = "none";
+    $("btnShow").style.display = "inline-block";
   }
 }
 
-// ===== Default auto-load =====
-async function loadDefaultTxtIfEmpty() {
-  if (cards.length > 0) return;
-
-  try {
-    const res = await fetch(DEFAULT_TXT + `?v=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) {
-      $("prompt").textContent = `Default file not found: ${DEFAULT_TXT} (HTTP ${res.status})`;
-      $("answer").classList.add("hidden");
-      $("btnShow").classList.add("hidden");
-      $("gradeRow").classList.add("hidden");
-      return;
-    }
-
-    const text = await responseToTextUTF8(res);
-    const parsed = parseText(text);
-
-    if (parsed.length === 0) {
-      $("prompt").textContent =
-        `Loaded ${DEFAULT_TXT}, but 0 lines parsed. Check format: word<TAB>meaning or word - meaning`;
-      return;
-    }
-
-    cards = parsed;
-    saveCards();
-    setCurrentFile(DEFAULT_TXT);
-
-    try {
-      const sigHash = await sha256Hex(text);
-      localStorage.setItem(LS_WORDS_SIG, `B:${sigHash}`);
-    } catch (e) {}
-
-    showing = false;
-    resetSession();
-    updateUI();
-  } catch (e) {
-    $("prompt").textContent = `Failed to load ${DEFAULT_TXT}: ${String(e)}`;
-  }
-}
-
-// ===== Events =====
-$("btnImport").onclick = async () => {
-  const file = $("file").files[0];
-  if (!file) return alert("Please choose a .txt file first.");
-
-  const text = await fileToTextUTF8(file);
-  const parsed = parseText(text);
-
-  if (parsed.length === 0) {
-    alert("0 words parsed. Check format: word<TAB>meaning or word - meaning");
-    return;
-  }
-
-  const existing = new Set(cards.map(c => c.term.toLowerCase()));
-  const filtered = parsed.filter(c => !existing.has(c.term.toLowerCase()));
-
-  cards = cards.concat(filtered);
-  saveCards();
-
-  setCurrentFile(file.name);
-
-  clearUnknownFilter(true);
-  showing = false;
-  resetSession();
-  updateUI();
-};
-
-$("btnClear").onclick = async () => {
-  if (!confirm("Clear all cards?")) return;
-
-  cards = [];
-  saveCards();
-
-  clearUnknownFilter(true);
-  showing = false;
-  resetSession();
-  updateUI();
-
-  await loadDefaultTxtIfEmpty();
-};
-
+// =========================
+// Actions
+// =========================
 $("btnShow").onclick = () => {
   showing = true;
   updateUI();
 };
 
-function gradeCurrent(knew) {
-  const queue = getQueue();
-  const c = queue[0];
-  if (!c) return;
+$("btnForgot").onclick = () => {
+  const card = getQueue()[0];
+  if (!card) return;
 
-  pushUnique(sessionAllIds, c.id);
+  // ✅ 오늘 forgot 카운트 +1
+  bumpForgotCount(card.id);
 
-  if (!knew) {
-    // ✅ 세션 unknown 최신 상태: add
-    if (!sessionUnknownSet.has(c.id)) {
-      sessionUnknownSet.add(c.id);
-      pushUnique(sessionUnknownOrder, c.id);
-    }
+  sessionAllIds.push(card.id);
+  sessionUnknownSet.add(card.id);
 
-    // ✅ 누적 unknown(ALL)에도 저장
-    if (!unknownIds.includes(c.id)) {
-      unknownIds.push(c.id);
-      saveUnknown();
-    }
+  card.level = 0;
+  card.due = nextDue(0);
 
-    c.level = 0;
-    c.due = nextDue(0);
-  } else {
-    // ✅ 세션 unknown 최신 상태: remove (Unknown 카운트 즉시 감소)
-    if (sessionUnknownSet.has(c.id)) {
-      sessionUnknownSet.delete(c.id);
-    }
-
-    c.level = Math.min((c.level || 0) + 1, 5);
-    c.due = nextDue(c.level);
-
-    // unknown-only 필터 중이면 "남은 unknown"에서도 제거
-    if (unknownFilterOn && unknownFilterSet.has(c.id)) {
-      unknownFilterSet.delete(c.id);
-      unknownFilterIds = unknownFilterIds.filter(id => id !== c.id);
-
-      // ✅ 추가 업데이트: unknown-only에서 Unknown 0 되면 Done! + 자동 종료
-      if (unknownFilterSet.size === 0) {
-        saveCards();
-        showing = false;
-        doneAndExitUnknownMode();
-        return;
-      }
-    }
-  }
-
-  saveCards();
   showing = false;
   updateUI();
-}
+};
 
-$("btnKnew").onclick = () => gradeCurrent(true);
-$("btnForgot").onclick = () => gradeCurrent(false);
+$("btnKnew").onclick = () => {
+  const card = getQueue()[0];
+  if (!card) return;
 
-// Repeat buttons
-if ($("btnRepeatAll")) $("btnRepeatAll").onclick = () => repeatAllSession();
-if ($("btnRepeatUnknown")) $("btnRepeatUnknown").onclick = () => startUnknownFilterFromSession();
+  sessionAllIds.push(card.id);
+  sessionUnknownSet.delete(card.id);
 
-// Export/Share buttons
-if ($("btnExportUnknownSession")) $("btnExportUnknownSession").onclick = () => exportUnknownSessionTxt();
-if ($("btnExportUnknownAll")) $("btnExportUnknownAll").onclick = () => exportUnknownAllTxt();
-if ($("btnShareUnknownAll")) $("btnShareUnknownAll").onclick = () => shareUnknownAll();
-if ($("btnClearUnknownAll")) $("btnClearUnknownAll").onclick = () => clearUnknownAll();
+  card.level = Math.min(card.level + 1, 5);
+  card.due = nextDue(card.level);
 
-// ===== Service Worker (offline cache) =====
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
-}
-
-// ===== Init =====
-(async function init() {
+  showing = false;
   updateUI();
-  loadCurrentFileLabel();
+};
 
-  if (cards.length > 0 && !getCurrentFile()) {
-    setCurrentFile(DEFAULT_TXT);
+// ✅ Repeat all: 실수 방지 확인창
+$("btnRepeatAll").onclick = () => {
+  if (sessionAllIds.length === 0) return;
+
+  const ok = confirm("Repeat all (session)?");
+  if (!ok) return;
+
+  const now = Date.now();
+  sessionAllIds.forEach(id => {
+    const c = cards.find(x => x.id === id);
+    if (c) c.due = now;
+  });
+
+  // repeat all을 누르면 Top10 모드는 끄는 게 안전(실수 방지)
+  top10ModeOn = false;
+  top10Set = new Set();
+
+  showing = false;
+  updateUI();
+};
+
+$("btnRepeatUnknown").onclick = () => {
+  if (sessionUnknownSet.size === 0) return;
+
+  const now = Date.now();
+  sessionUnknownSet.forEach(id => {
+    const c = cards.find(x => x.id === id);
+    if (c) c.due = now;
+  });
+
+  // repeat unknown도 Top10 모드는 끔
+  top10ModeOn = false;
+  top10Set = new Set();
+
+  showing = false;
+  updateUI();
+};
+
+// ✅ NEW: Top 10 forgot (today)
+$("btnTop10Forgot").onclick = () => {
+  const ids = getTop10ForgotIdsToday();
+  if (ids.length === 0) {
+    alert("No 'I forgot' records for today yet.");
+    return;
   }
 
-  await loadDefaultTxtIfEmpty();
-  await checkWordsUpdateOnOpen();
+  // Top10 모드 ON
+  top10ModeOn = true;
+  top10Set = new Set(ids);
 
-  document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState === "visible") {
-      await checkWordsUpdateOnOpen();
-    }
+  // Top10만 지금 바로 복습되게 due를 now로 당김
+  const now = Date.now();
+  ids.forEach(id => {
+    const c = cards.find(x => x.id === id);
+    if (c) c.due = now;
   });
-})();
+
+  showing = false;
+  updateUI();
+};
+
+// =========================
+// Import
+// =========================
+$("btnImport").onclick = async () => {
+  const file = $("file").files[0];
+  if (!file) return;
+
+  const text = await file.text();
+  const parsed = parseText(text);
+
+  cards = cards.concat(parsed);
+  $("currentFile").textContent = file.name;
+
+  // 새 단어 임포트하면 모드들 정리
+  top10ModeOn = false;
+  top10Set = new Set();
+
+  showing = false;
+  updateUI();
+};
+
+$("btnClear").onclick = async () => {
+  cards = [];
+  sessionAllIds = [];
+  sessionUnknownSet.clear();
+
+  // 모드 정리
+  top10ModeOn = false;
+  top10Set = new Set();
+
+  updateUI();
+  await loadDefault();
+};
+
+// =========================
+// Init
+// =========================
+loadDefault();
