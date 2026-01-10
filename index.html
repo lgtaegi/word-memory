@@ -1,9 +1,11 @@
 <!--
   Word Memo
-  Version: 1.05
-  Changes:
-  - Restore original positions for "Show meaning", "I forgot", "I knew"
-  - All three buttons are back to their original, default layout
+  Version: 1.06
+  Base: 1.05 (stable baseline)
+  Changelog:
+  - UI: visually separate study actions vs control buttons (divider + spacing)
+  - Feature: Reverse mode toggle (meaning → word)
+  - Feature: Stats button + panel (Today: Seen / Forgot / Knew)
 -->
 
 <!doctype html>
@@ -51,22 +53,41 @@
         </div>
       </div>
 
-      <!-- Word -->
+      <!-- Word / Prompt -->
       <div id="prompt" class="prompt">Import a txt file to start.</div>
 
-      <!-- Meaning -->
+      <!-- Answer -->
       <div id="answer" class="answer" style="display:none;"></div>
 
-      <!-- Show meaning (원래 위치) -->
+      <!-- Study actions (kept as v1.05 behavior/placement) -->
       <button id="btnShow">Show meaning</button>
 
-      <!-- I forgot / I knew (Show meaning 아래, 원래 위치) -->
       <div id="gradeRow" class="row" style="display:none;">
         <button id="btnForgot">I forgot</button>
         <button id="btnKnew">I knew</button>
       </div>
 
-      <!-- Lower controls (오른쪽 정렬 유지) -->
+      <!-- ✅ Divider to separate study actions vs controls -->
+      <hr style="border:0;border-top:1px solid rgba(0,0,0,.12); margin:14px 0 12px 0;" />
+
+      <!-- Controls (right-aligned + grouped) -->
+      <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+        <label style="display:inline-flex; align-items:center; gap:8px; user-select:none;">
+          <input id="toggleReverse" type="checkbox" />
+          Reverse
+        </label>
+
+        <button id="btnStats">Stats</button>
+      </div>
+
+      <div id="statsPanel" style="display:none; margin-top:10px;">
+        <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+          <span id="statTodaySeen">Today Seen: 0</span>
+          <span id="statTodayForgot">Forgot: 0</span>
+          <span id="statTodayKnew">Knew: 0</span>
+        </div>
+      </div>
+
       <div class="row" style="justify-content:flex-end; margin-top:12px;">
         <button id="btnRepeatAll">Repeat all (session)</button>
         <button id="btnRepeatUnknown">Repeat unknown (session)</button>
