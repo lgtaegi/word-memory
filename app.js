@@ -1,8 +1,9 @@
 /*
   Word Memo
-  Version: 1.04
+  Version: 1.05
   Changes:
-  - UI layout change in HTML only (buttons right-aligned). JS logic unchanged.
+  - No logic changes
+  - UI layout fully restored to original positions
 */
 
 const DEFAULT_TXT = "words.txt";

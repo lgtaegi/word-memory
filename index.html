@@ -1,9 +1,9 @@
 <!--
   Word Memo
-  Version: 1.04
+  Version: 1.05
   Changes:
-  - Revert to v1.02 layout for "Show meaning" + "I forgot / I knew"
-  - Right-align the lower control buttons (Repeat / Top10) to visually separate sections
+  - Restore original positions for "Show meaning", "I forgot", "I knew"
+  - All three buttons are back to their original, default layout
 -->
 
 <!doctype html>
@@ -51,22 +51,22 @@
         </div>
       </div>
 
-      <!-- ✅ v1.02 style: grade buttons are between header and prompt (hidden until meaning shown) -->
-      <div id="gradeRow" class="row" style="display:none; margin:8px 0 10px 0;">
-        <button id="btnForgot">I forgot</button>
-        <button id="btnKnew">I knew</button>
-      </div>
-
       <!-- Word -->
       <div id="prompt" class="prompt">Import a txt file to start.</div>
 
       <!-- Meaning -->
       <div id="answer" class="answer" style="display:none;"></div>
 
-      <!-- ✅ Show meaning stays in its original position (below word/meaning) -->
+      <!-- Show meaning (원래 위치) -->
       <button id="btnShow">Show meaning</button>
 
-      <!-- ✅ Lower buttons: right-aligned for separation -->
+      <!-- I forgot / I knew (Show meaning 아래, 원래 위치) -->
+      <div id="gradeRow" class="row" style="display:none;">
+        <button id="btnForgot">I forgot</button>
+        <button id="btnKnew">I knew</button>
+      </div>
+
+      <!-- Lower controls (오른쪽 정렬 유지) -->
       <div class="row" style="justify-content:flex-end; margin-top:12px;">
         <button id="btnRepeatAll">Repeat all (session)</button>
         <button id="btnRepeatUnknown">Repeat unknown (session)</button>
