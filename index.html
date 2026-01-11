@@ -1,17 +1,11 @@
 <!--
   Word Memo
-  Version: 1.08
-  Base: 1.07
+  Version: 1.10
+  Base: 1.09
   Changelog:
-  - Modes updated:
-    - Reverse = show English words in reverse order (bottom -> top), NOT meaning-first
-    - Meaning mode added = show meaning(KR) first, then reveal term(EN)
-  - Restore Unknown buttons 1~4:
-    1) Download unknown (session)
-    2) Download unknown (ALL)
-    3) Share / Save unknown (session)
-    4) Clear unknown list (session)
-  - Keep layout: study buttons stay where they are; controls remain in the control area
+  - Word number display updated:
+    - Always show "." after number (e.g. 123.)
+    - Smaller size (50%) and lighter gray color
 -->
 
 <!doctype html>
@@ -22,6 +16,16 @@
   <title>Word Memo</title>
 
   <link rel="stylesheet" href="style.css" />
+
+  <style>
+    /* v1.10 number style */
+    .word-num {
+      font-size: 0.5em;
+      color: #9aa0a6; /* light gray */
+      margin-right: 6px;
+      vertical-align: top;
+    }
+  </style>
 </head>
 <body>
   <header class="top">
@@ -59,13 +63,12 @@
         </div>
       </div>
 
-      <!-- Word / Prompt -->
+      <!-- Prompt -->
       <div id="prompt" class="prompt">Import a txt file to start.</div>
 
       <!-- Answer -->
       <div id="answer" class="answer" style="display:none;"></div>
 
-      <!-- Study actions (keep original placement) -->
       <button id="btnShow">Show meaning</button>
 
       <div id="gradeRow" class="row" style="display:none;">
@@ -73,25 +76,16 @@
         <button id="btnKnew">I knew</button>
       </div>
 
-      <!-- Controls area -->
       <hr style="border:0;border-top:1px solid rgba(0,0,0,.12); margin:14px 0 12px 0;" />
 
       <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap;">
-        <label style="display:inline-flex; align-items:center; gap:8px; user-select:none;">
-          <input id="toggleMeaning" type="checkbox" />
-          Meaning
-        </label>
-
-        <label style="display:inline-flex; align-items:center; gap:8px; user-select:none;">
-          <input id="toggleReverse" type="checkbox" />
-          Reverse
-        </label>
-
+        <label><input id="toggleMeaning" type="checkbox" /> Meaning</label>
+        <label><input id="toggleReverse" type="checkbox" /> Reverse</label>
         <button id="btnStats">Stats</button>
       </div>
 
       <div id="statsPanel" style="display:none; margin-top:10px;">
-        <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+        <div class="row" style="justify-content:flex-end; gap:10px;">
           <span id="statTodaySeen">Today Seen: 0</span>
           <span id="statTodayForgot">Forgot: 0</span>
           <span id="statTodayKnew">Knew: 0</span>
@@ -107,8 +101,7 @@
         <button id="btnTop10Forgot">Top 10 forgot (today)</button>
       </div>
 
-      <!-- ✅ Unknown buttons restored -->
-      <div class="row" style="justify-content:flex-end; margin-top:10px; gap:10px; flex-wrap:wrap;">
+      <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap; margin-top:10px;">
         <button id="btnDlUnknownSession">Download unknown (session)</button>
         <button id="btnDlUnknownAll">Download unknown (ALL)</button>
         <button id="btnShareUnknownSession">Share / Save unknown (session)</button>
