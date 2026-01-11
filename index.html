@@ -1,11 +1,17 @@
 <!--
   Word Memo
-  Version: 1.06
-  Base: 1.05 (stable baseline)
+  Version: 1.08
+  Base: 1.07
   Changelog:
-  - UI: visually separate study actions vs control buttons (divider + spacing)
-  - Feature: Reverse mode toggle (meaning → word)
-  - Feature: Stats button + panel (Today: Seen / Forgot / Knew)
+  - Modes updated:
+    - Reverse = show English words in reverse order (bottom -> top), NOT meaning-first
+    - Meaning mode added = show meaning(KR) first, then reveal term(EN)
+  - Restore Unknown buttons 1~4:
+    1) Download unknown (session)
+    2) Download unknown (ALL)
+    3) Share / Save unknown (session)
+    4) Clear unknown list (session)
+  - Keep layout: study buttons stay where they are; controls remain in the control area
 -->
 
 <!doctype html>
@@ -59,7 +65,7 @@
       <!-- Answer -->
       <div id="answer" class="answer" style="display:none;"></div>
 
-      <!-- Study actions (kept as v1.05 behavior/placement) -->
+      <!-- Study actions (keep original placement) -->
       <button id="btnShow">Show meaning</button>
 
       <div id="gradeRow" class="row" style="display:none;">
@@ -67,11 +73,15 @@
         <button id="btnKnew">I knew</button>
       </div>
 
-      <!-- ✅ Divider to separate study actions vs controls -->
+      <!-- Controls area -->
       <hr style="border:0;border-top:1px solid rgba(0,0,0,.12); margin:14px 0 12px 0;" />
 
-      <!-- Controls (right-aligned + grouped) -->
       <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+        <label style="display:inline-flex; align-items:center; gap:8px; user-select:none;">
+          <input id="toggleMeaning" type="checkbox" />
+          Meaning
+        </label>
+
         <label style="display:inline-flex; align-items:center; gap:8px; user-select:none;">
           <input id="toggleReverse" type="checkbox" />
           Reverse
@@ -95,6 +105,14 @@
 
       <div class="row" style="justify-content:flex-end;">
         <button id="btnTop10Forgot">Top 10 forgot (today)</button>
+      </div>
+
+      <!-- ✅ Unknown buttons restored -->
+      <div class="row" style="justify-content:flex-end; margin-top:10px; gap:10px; flex-wrap:wrap;">
+        <button id="btnDlUnknownSession">Download unknown (session)</button>
+        <button id="btnDlUnknownAll">Download unknown (ALL)</button>
+        <button id="btnShareUnknownSession">Share / Save unknown (session)</button>
+        <button id="btnClearUnknownSession">Clear unknown list (session)</button>
       </div>
     </section>
   </main>
