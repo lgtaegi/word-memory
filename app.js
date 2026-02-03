@@ -1,13 +1,14 @@
 /*
   Word Memo
-  Version: 1.10
-  Base: 1.09
-  Changelog:
-  - Word number formatting:
-    - Always show a dot after the number: "123."
-    - Styled with <span class="word-num"> (smaller + light gray via index.html CSS)
-  - Keeps v1.09 behavior:
-    - Meaning ON => Show button text becomes "Show word"
+  Version: 1.11
+  Base: 1.10
+  Update Notes (lgtaegi):
+  - Study flow is now LINEAR (file line order). No SRS due scheduling.
+  - Prevents "jumping back" mid-study (e.g., around #974) caused by due-queue reshuffling.
+  - Leading numbers are optional; app won't error if missing.
+  - Duplicate words are allowed (no dedupe / no hiding).
+  - "Due" counter element now shows Remaining count (items left in current run).
+  - Keeps existing UI/IDs/buttons and features: Repeat all/unknown, Top10, Stats, Unknown exports.
 */
 
 const DEFAULT_TXT = "words.txt";
@@ -33,13 +34,18 @@ let showing = false;
 let top10ModeOn = false;
 let top10Set = new Set();
 
-// Repeat-Unknown mode (from v1.07)
+// Repeat-Unknown mode (snapshot at click time)
 let repeatUnknownModeOn = false;
-let repeatUnknownSet = new Set(); // snapshot at click time
+let repeatUnknownSet = new Set();
 
 // Modes
 let reverseMode = false; // order only
 let meaningMode = false; // meaning-first
+
+// LINEAR run controller
+let runQueue = []; // current list of ids in order
+let runIndex = 0;  // pointer
+let resumeMain = null; // { queue, index } when entering Top10 or RepeatUnknown
 
 const $ = (id) => document.getElementById(id);
 
@@ -58,14 +64,23 @@ function stripLeadingNumber(s) {
 }
 
 /**
- * v1.10: number prefix rendered as HTML span, always with dot.
+ * number prefix rendered as HTML span, always with dot.
  * - If num is missing: returns ""
  * - If num exists: returns `<span class="word-num">123.</span> `
  */
 function numPrefixHtml(num) {
   if (num === null || num === undefined || Number.isNaN(num)) return "";
-  // Always show dot after number
   return `<span class="word-num">${num}.</span> `;
+}
+
+// Simple HTML escape for safe innerHTML usage
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 // ---------- Today stats ----------
@@ -161,29 +176,16 @@ function saveBool(key, on) {
   localStorage.setItem(key, on ? "1" : "0");
 }
 
-// ✅ v1.09: Show button label based on Meaning mode
+// Show button label based on Meaning mode
 function updateShowButtonLabel() {
   const btn = $("btnShow");
   if (!btn) return;
   btn.textContent = meaningMode ? "Show word" : "Show meaning";
 }
 
-// ---------- Load default ----------
-async function loadDefault() {
-  if (cards.length) return;
-  try {
-    const r = await fetch(DEFAULT_TXT);
-    if (!r.ok) throw 0;
-    cards = parseText(await r.text());
-    $("currentFile").textContent = DEFAULT_TXT;
-    updateUI();
-  } catch {
-    $("prompt").textContent = "Failed to load words.txt";
-  }
-}
-
 // ---------- Parse ----------
 function parseText(text) {
+  // LINEAR: keep file order exactly.
   return text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(lineRaw=>{
     const { num, rest } = stripLeadingNumber(lineRaw);
 
@@ -197,93 +199,132 @@ function parseText(text) {
       num: num, // may be null (safe)
       term: (t||"").trim(),
       meaning: (m||"").trim(),
-      level: 0,
-      due: Date.now(),
+      __seenTodayKey: null,
     };
   }).filter(Boolean);
 }
 
-// ---------- SRS ----------
-function nextDue(l){
-  return l===0 ? Date.now()+600000 : Date.now()+[1,3,7,14,30][l-1]*86400000;
+// ---------- Build MAIN queue (order only) ----------
+function buildMainQueueIds() {
+  let ids = cards.map(c => c.id);
+  if (reverseMode) ids = ids.slice().reverse();
+  return ids;
 }
 
-// ✅ Queue priority: RepeatUnknownMode > Top10Mode > Normal
-function getQueue(){
-  const n = Date.now();
-
-  let list;
+// ---------- Current run queue ----------
+function getCurrentRunQueueIds() {
+  // Priority: RepeatUnknown > Top10 > Main
   if (repeatUnknownModeOn) {
-    list = cards.filter(c => repeatUnknownSet.has(c.id) && c.due <= n);
-  } else if (top10ModeOn) {
-    list = cards.filter(c => top10Set.has(c.id) && c.due <= n);
-  } else {
-    list = cards.filter(c => c.due <= n);
+    const mainOrder = buildMainQueueIds();
+    return mainOrder.filter(id => repeatUnknownSet.has(id));
   }
-
-  // ✅ Reverse = reverse ORDER only (bottom -> top)
-  if (reverseMode) list = list.slice().reverse();
-
-  return list;
+  if (top10ModeOn) {
+    const mainOrder = buildMainQueueIds();
+    return mainOrder.filter(id => top10Set.has(id));
+  }
+  return buildMainQueueIds();
 }
 
-// ---------- Repeat-unknown auto-exit ----------
-function autoExitRepeatUnknownIfFinished() {
-  if (!repeatUnknownModeOn) return;
-  if (getQueue().length === 0) {
-    repeatUnknownModeOn = false;
-    repeatUnknownSet = new Set();
-    showing = false;
+function syncRunQueueKeepCurrent() {
+  const currentId = runQueue[runIndex] || null;
+  runQueue = getCurrentRunQueueIds();
+
+  if (!currentId) {
+    runIndex = 0;
+    return;
   }
+  const idx = runQueue.indexOf(currentId);
+  runIndex = idx >= 0 ? idx : 0;
+}
+
+function remainingCount() {
+  const r = runQueue.length - runIndex;
+  return r < 0 ? 0 : r;
+}
+
+function currentCard() {
+  const id = runQueue[runIndex];
+  if (!id) return null;
+  return cards.find(c => c.id === id) || null;
 }
 
 // ---------- Prompt/Answer builders ----------
 function buildPromptHtml(card) {
   const prefix = numPrefixHtml(card.num);
   const body = meaningMode ? card.meaning : card.term;
-  // prefix is HTML; body is plain text => escape body
   return prefix + escapeHtml(body);
 }
 function buildAnswerText(card) {
   return meaningMode ? card.term : card.meaning;
 }
 
-// Simple HTML escape for safe innerHTML usage
-function escapeHtml(s) {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+// ---------- Auto-exit special runs when finished ----------
+function autoExitSpecialRunIfFinished() {
+  if (runIndex < runQueue.length) return;
+
+  // finished current special run -> return to main
+  if (repeatUnknownModeOn || top10ModeOn) {
+    repeatUnknownModeOn = false;
+    repeatUnknownSet = new Set();
+    top10ModeOn = false;
+    top10Set = new Set();
+
+    // restore main
+    if (resumeMain) {
+      runQueue = resumeMain.queue;
+      runIndex = resumeMain.index;
+      resumeMain = null;
+    } else {
+      runQueue = buildMainQueueIds();
+      runIndex = 0;
+    }
+  }
 }
 
 // ---------- UI ----------
 function updateUI(){
-  autoExitRepeatUnknownIfFinished();
-
-  // v1.09 label update (safe to call every render)
+  // keep show label in sync
   updateShowButtonLabel();
 
+  // rebuild queue if needed (e.g., reverse toggled)
+  if (!runQueue.length) runQueue = getCurrentRunQueueIds();
   $("stat").textContent = `Cards: ${cards.length}`;
-  $("due").textContent  = `Due: ${getQueue().length}`;
+
+  // "Due" element is used as Remaining
+  $("due").textContent  = `Remaining: ${remainingCount()}`;
   $("unknownCount").textContent = `Unknown: ${sessionUnknownSet.size}`;
 
   updateStatsUI();
 
-  const q = getQueue();
-  if (!q.length) {
-    $("prompt").textContent = "No cards due 🎉";
+  // finished?
+  autoExitSpecialRunIfFinished();
+
+  if (!runQueue.length) {
+    $("prompt").textContent = "Import a txt file to start.";
+    $("answer").style.display = "none";
+    $("btnShow").style.display = "inline-block";
+    $("gradeRow").style.display = "none";
+    return;
+  }
+
+  if (runIndex >= runQueue.length) {
+    $("prompt").textContent = "No cards 🎉";
     $("answer").style.display = "none";
     $("btnShow").style.display = "none";
     $("gradeRow").style.display = "none";
     return;
   }
 
-  const c = q[0];
+  const c = currentCard();
+  if (!c) {
+    runIndex += 1;
+    showing = false;
+    updateUI();
+    return;
+  }
+
   ensureSeenCountedOncePerCard(c.id);
 
-  // v1.10: use HTML so number can be styled
   $("prompt").innerHTML = buildPromptHtml(c);
 
   if (showing) {
@@ -296,13 +337,21 @@ function updateUI(){
     $("gradeRow").style.display = "none";
     $("btnShow").style.display = "inline-block";
   }
+
+  $("due").textContent = `Remaining: ${remainingCount()}`;
 }
 
 // ---------- Actions ----------
+function goNext() {
+  runIndex += 1;
+  showing = false;
+  updateUI();
+}
+
 $("btnShow").onclick = () => { showing = true; updateUI(); };
 
 $("btnForgot").onclick = () => {
-  const c = getQueue()[0]; if (!c) return;
+  const c = currentCard(); if (!c) return;
 
   bumpToday("forgot");
   bumpForgotCount(c.id);
@@ -311,41 +360,33 @@ $("btnForgot").onclick = () => {
   sessionUnknownSet.add(c.id);
   addToUnknownAll(c);
 
-  c.level = 0;
-  c.due = nextDue(0);
-
-  showing = false;
-  updateUI();
+  goNext();
 };
 
 $("btnKnew").onclick = () => {
-  const c = getQueue()[0]; if (!c) return;
+  const c = currentCard(); if (!c) return;
 
   bumpToday("knew");
 
   sessionAllIds.push(c.id);
   sessionUnknownSet.delete(c.id);
 
-  c.level = Math.min(c.level + 1, 5);
-  c.due = nextDue(c.level);
-
-  showing = false;
-  updateUI();
+  goNext();
 };
 
+// Repeat all (session) — keep confirm (prevents misclick)
 $("btnRepeatAll").onclick = () => {
   if (!sessionAllIds.length) return;
   if (!confirm("Repeat all (session)?")) return;
 
-  const n = Date.now();
-  sessionAllIds.forEach(id => {
-    const c = cards.find(x => x.id === id);
-    if (c) c.due = n;
-  });
+  // Exit special runs
+  top10ModeOn = false; top10Set = new Set();
+  repeatUnknownModeOn = false; repeatUnknownSet = new Set();
+  resumeMain = null;
 
-  // leave special modes
-  top10ModeOn = false; top10Set.clear();
-  repeatUnknownModeOn = false; repeatUnknownSet.clear();
+  // Build queue from sessionAllIds in order, restart at 0
+  runQueue = sessionAllIds.slice();
+  runIndex = 0;
 
   showing = false;
   updateUI();
@@ -354,19 +395,17 @@ $("btnRepeatAll").onclick = () => {
 $("btnRepeatUnknown").onclick = () => {
   if (!sessionUnknownSet.size) return;
 
-  // enter repeat-unknown mode using snapshot
+  // save main resume
+  if (!resumeMain) resumeMain = { queue: runQueue.slice(), index: runIndex };
+
   repeatUnknownModeOn = true;
   repeatUnknownSet = new Set(Array.from(sessionUnknownSet));
 
-  // make them due now
-  const n = Date.now();
-  repeatUnknownSet.forEach(id => {
-    const c = cards.find(x => x.id === id);
-    if (c) c.due = n;
-  });
+  runQueue = getCurrentRunQueueIds();
+  runIndex = 0;
 
   // leave top10
-  top10ModeOn = false; top10Set.clear();
+  top10ModeOn = false; top10Set = new Set();
 
   showing = false;
   updateUI();
@@ -376,17 +415,17 @@ $("btnTop10Forgot").onclick = () => {
   const ids = getTop10ForgotIdsToday();
   if (!ids.length) return alert("No 'I forgot' records for today yet.");
 
+  // save main resume
+  if (!resumeMain) resumeMain = { queue: runQueue.slice(), index: runIndex };
+
   top10ModeOn = true;
   top10Set = new Set(ids);
 
-  const n = Date.now();
-  ids.forEach(id => {
-    const c = cards.find(x => x.id === id);
-    if (c) c.due = n;
-  });
+  runQueue = getCurrentRunQueueIds();
+  runIndex = 0;
 
   // leave repeat-unknown
-  repeatUnknownModeOn = false; repeatUnknownSet.clear();
+  repeatUnknownModeOn = false; repeatUnknownSet = new Set();
 
   showing = false;
   updateUI();
@@ -405,7 +444,6 @@ $("toggleMeaning").onchange = (e) => {
   meaningMode = !!e.target.checked;
   saveBool(LS_MEANING, meaningMode);
 
-  // v1.09: immediately update label
   updateShowButtonLabel();
 
   showing = false;
@@ -415,6 +453,10 @@ $("toggleMeaning").onchange = (e) => {
 $("toggleReverse").onchange = (e) => {
   reverseMode = !!e.target.checked;
   saveBool(LS_REVERSE, reverseMode);
+
+  // Rebuild queue, keep current card if possible
+  syncRunQueueKeepCurrent();
+
   showing = false;
   updateUI();
 };
@@ -482,17 +524,44 @@ $("btnClearUnknownSession").onclick = () => {
   updateUI();
 };
 
-// ---------- Import ----------
+// ---------- Import / Clear ----------
+async function loadDefault() {
+  if (cards.length) return;
+  try {
+    const r = await fetch(DEFAULT_TXT);
+    if (!r.ok) throw 0;
+
+    cards = parseText(await r.text());
+    $("currentFile").textContent = DEFAULT_TXT;
+
+    // Start main run from top
+    runQueue = getCurrentRunQueueIds();
+    runIndex = 0;
+
+    showing = false;
+    updateUI();
+  } catch (e) {
+    console.error("Failed to load words.txt:", e);
+    $("prompt").textContent = "Failed to load words.txt";
+  }
+}
+
 $("btnImport").onclick = async () => {
   const f = $("file").files[0];
   if (!f) return;
 
-  cards = cards.concat(parseText(await f.text()));
+  const added = parseText(await f.text());
+  cards = cards.concat(added);
+
   $("currentFile").textContent = f.name;
 
-  // exit modes
-  top10ModeOn = false; top10Set.clear();
-  repeatUnknownModeOn = false; repeatUnknownSet.clear();
+  // restart main run for predictability
+  top10ModeOn = false; top10Set = new Set();
+  repeatUnknownModeOn = false; repeatUnknownSet = new Set();
+  resumeMain = null;
+
+  runQueue = getCurrentRunQueueIds();
+  runIndex = 0;
 
   showing = false;
   updateUI();
@@ -503,8 +572,12 @@ $("btnClear").onclick = async () => {
   sessionAllIds = [];
   sessionUnknownSet.clear();
 
-  top10ModeOn = false; top10Set.clear();
-  repeatUnknownModeOn = false; repeatUnknownSet.clear();
+  top10ModeOn = false; top10Set = new Set();
+  repeatUnknownModeOn = false; repeatUnknownSet = new Set();
+  resumeMain = null;
+
+  runQueue = [];
+  runIndex = 0;
 
   showing = false;
   updateUI();
@@ -520,9 +593,8 @@ $("btnClear").onclick = async () => {
   if ($("toggleMeaning")) $("toggleMeaning").checked = meaningMode;
   if ($("toggleReverse")) $("toggleReverse").checked = reverseMode;
 
-  // v1.09 label update on startup
   updateShowButtonLabel();
-
   updateStatsUI();
+
   loadDefault();
 })();
